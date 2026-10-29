@@ -18,18 +18,18 @@ const ck = (x, y, z) => x + ',' + y + ',' + z;
 function params(mode, level) {
   if (mode === '2d') {
     return {
-      W: Math.min(5 + Math.floor(level / 3), 9),
-      H: Math.min(7 + Math.floor(level / 2), 13), D: 1,
-      dens: Math.min(0.65 + level * 0.01, 0.72),
-      maxLen: Math.min(4 + Math.floor(level / 3), 9),
+      W: Math.min(5 + Math.floor(level / 3), 14),
+      H: Math.min(7 + Math.floor(level / 2), 20), D: 1,
+      dens: Math.min(0.65 + level * 0.01, 0.78),
+      maxLen: Math.min(4 + Math.floor(level / 3), 14),
     };
   }
   if (mode === '3dout') {
-    const n = Math.min(6 + Math.floor(level / 6), 8);
-    return { W: n, H: n, D: n, dens: 0.55, maxLen: Math.min(5 + Math.floor(level / 4), 9) };
+    const n = Math.min(6 + Math.floor(level / 6), 12);
+    return { W: n, H: n, D: n, dens: Math.min(0.55 + level * 0.005, 0.7), maxLen: Math.min(5 + Math.floor(level / 4), 14) };
   }
-  const n = Math.min(4 + Math.floor(level / 5), 6);
-  return { W: n, H: n, D: n, dens: 0.45, maxLen: Math.min(5 + Math.floor(level / 4), 8) };
+  const n = Math.min(4 + Math.floor(level / 5), 9);
+  return { W: n, H: n, D: n, dens: Math.min(0.45 + level * 0.005, 0.6), maxLen: Math.min(5 + Math.floor(level / 4), 12) };
 }
 
 const SEEDS = { '2d': 1, '3d': 13, '3dout': 29 };
@@ -54,12 +54,13 @@ function generate(mode, level) {
     for (let ax = 0; ax < 3; ax++) if (!d[ax] && (p[ax] === 0 || p[ax] === (ax ? (ax === 1 ? H : D) : W) - 1)) k++;
     return k >= 2;
   };
+  const onEdge = c => c.filter((v, ax) => v === 0 || v === (ax ? (ax === 1 ? H : D) : W) - 1).length >= 2;
   const dirs = mode === '2d' ? DIRS.slice(0, 4) : DIRS;
   const target = Math.floor((out ? W * H * D - (W - 2) * (H - 2) * (D - 2) : W * H * D) * P.dens);
   let cells = 0;
   const arrows = [];
 
-  for (let tries = 0; tries < 5000 && cells < target; tries++) {
+  for (let tries = 0; tries < Math.max(5000, W * H * D * 12) && cells < target; tries++) {
     const len = 2 + Math.floor(R() * (P.maxLen - 1));
     let p = [Math.floor(R() * W), Math.floor(R() * H), Math.floor(R() * D)];
     if (occ.has(ck(...p)) || (out && !shell(...p))) continue;
@@ -77,6 +78,8 @@ function generate(mode, level) {
       path.push(p); mine.add(ck(...p)); lastd = d;
     }
     if (path.length < 2) continue;
+    // outside mode: an arrow may bend over an edge but never starts or ends on one
+    if (out && (onEdge(path[0]) || onEdge(path[path.length - 1]))) continue;
     for (const cand of [path, path.slice().reverse()]) {
       const a = cand[cand.length - 2], b = cand[cand.length - 1];
       const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
