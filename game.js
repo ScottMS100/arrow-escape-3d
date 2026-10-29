@@ -25,7 +25,7 @@ function params(mode, level) {
     };
   }
   if (mode === '3dout') {
-    const n = Math.min(4 + Math.floor(level / 6), 7);
+    const n = Math.min(6 + Math.floor(level / 6), 8);
     return { W: n, H: n, D: n, dens: 0.55, maxLen: Math.min(5 + Math.floor(level / 4), 9) };
   }
   const n = Math.min(4 + Math.floor(level / 5), 6);
@@ -47,6 +47,13 @@ function generate(mode, level) {
   // occupy or sweep through must be a surface cell
   const out = mode === '3dout';
   const shell = (x, y, z) => x === 0 || y === 0 || z === 0 || x === W - 1 || y === H - 1 || z === D - 1;
+  // outside mode: a step along `d` from p runs along a cube edge if both other
+  // coordinates sit on the boundary; arrows may cross an edge but not follow one
+  const alongEdge = (p, d) => {
+    let k = 0;
+    for (let ax = 0; ax < 3; ax++) if (!d[ax] && (p[ax] === 0 || p[ax] === (ax ? (ax === 1 ? H : D) : W) - 1)) k++;
+    return k >= 2;
+  };
   const dirs = mode === '2d' ? DIRS.slice(0, 4) : DIRS;
   const target = Math.floor((out ? W * H * D - (W - 2) * (H - 2) * (D - 2) : W * H * D) * P.dens);
   let cells = 0;
@@ -62,7 +69,7 @@ function generate(mode, level) {
     while (path.length < len) {
       const opts = dirs.filter(d => {
         const q = [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
-        return inb(...q) && (!out || shell(...q)) && !occ.has(ck(...q)) && !mine.has(ck(...q));
+        return inb(...q) && (!out || (shell(...q) && !alongEdge(p, d))) && !occ.has(ck(...q)) && !mine.has(ck(...q));
       });
       if (!opts.length) break;
       const d = (lastd && opts.includes(lastd) && R() < 0.5) ? lastd : opts[Math.floor(R() * opts.length)];
@@ -81,7 +88,7 @@ function generate(mode, level) {
         ray.push(q);
         q = [q[0] + d[0], q[1] + d[1], q[2] + d[2]];
       }
-      if (!ok || (out && !ray.length)) continue;
+      if (!ok || (out && (!ray.length || alongEdge(b, d)))) continue;
       const L = cand.length;
       const ext = cand.concat(ray);
       let e = ray.length ? ray[ray.length - 1] : b;
