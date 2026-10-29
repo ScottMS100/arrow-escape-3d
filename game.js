@@ -25,13 +25,18 @@ function params(mode, level) {
     };
   }
   if (mode === '3dout') {
-    const n = Math.min(6 + Math.floor(level / 6), 12);
-    return { W: n, H: n, D: n, dens: Math.min(0.55 + level * 0.005, 0.7), maxLen: Math.min(5 + Math.floor(level / 4), 14) };
+    // finer lattice: arrows sit PITCH (35%) closer together on the same-sized cube
+    const n = Math.round(Math.min(6 + Math.floor(level / 6), 12) / PITCH);
+    return {
+      W: n, H: n, D: n, dens: Math.min(0.55 + level * 0.005, 0.7),
+      maxLen: Math.round(Math.min(5 + Math.floor(level / 4), 14) / PITCH),
+    };
   }
   const n = Math.min(4 + Math.floor(level / 5), 9);
   return { W: n, H: n, D: n, dens: Math.min(0.45 + level * 0.005, 0.6), maxLen: Math.min(5 + Math.floor(level / 4), 12) };
 }
 
+const PITCH = 0.65; // outside mode: lattice spacing relative to the original
 const SEEDS = { '2d': 1, '3d': 13, '3dout': 29 };
 
 // Arrows are placed one at a time; a new arrow's exit ray may not cross any
@@ -57,13 +62,18 @@ function generate(mode, level) {
   const onEdge = c => c.filter((v, ax) => v === 0 || v === (ax ? (ax === 1 ? H : D) : W) - 1).length >= 2;
   const dirs = mode === '2d' ? DIRS.slice(0, 4) : DIRS;
   const target = Math.floor((out ? W * H * D - (W - 2) * (H - 2) * (D - 2) : W * H * D) * P.dens);
-  let cells = 0;
+  // Harder levels compare more candidates per arrow and keep the one that
+  // blocks the most earlier arrows' exits, which builds deeper dependency chains.
+  const pickN = Math.min(8 + Math.floor(level * 0.75), 40);
+  const blockedBy = new Map(); // cell -> number of earlier arrows whose exit ray crosses it
   const arrows = [];
+  let cells = 0, budget = Math.max(5000, W * H * D * 12);
 
-  for (let tries = 0; tries < Math.max(5000, W * H * D * 12) && cells < target; tries++) {
+  // random arrow whose exit ray crosses no existing arrow, or null
+  function build() {
     const len = 2 + Math.floor(R() * (P.maxLen - 1));
     let p = [Math.floor(R() * W), Math.floor(R() * H), Math.floor(R() * D)];
-    if (occ.has(ck(...p)) || (out && !shell(...p))) continue;
+    if (occ.has(ck(...p)) || (out && !shell(...p))) return null;
     const path = [p];
     const mine = new Set([ck(...p)]);
     let lastd = null;
@@ -77,10 +87,11 @@ function generate(mode, level) {
       p = [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
       path.push(p); mine.add(ck(...p)); lastd = d;
     }
-    if (path.length < 2) continue;
+    if (path.length < 2) return null;
     // outside mode: an arrow may bend over an edge but never starts or ends on one
-    if (out && (onEdge(path[0]) || onEdge(path[path.length - 1]))) continue;
-    for (const cand of [path, path.slice().reverse()]) {
+    if (out && (onEdge(path[0]) || onEdge(path[path.length - 1]))) return null;
+    const tries = R() < 0.5 ? [path, path.slice().reverse()] : [path.slice().reverse(), path];
+    for (const cand of tries) {
       const a = cand[cand.length - 2], b = cand[cand.length - 1];
       const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
       const ray = [];
@@ -92,25 +103,40 @@ function generate(mode, level) {
         q = [q[0] + d[0], q[1] + d[1], q[2] + d[2]];
       }
       if (!ok || (out && (!ray.length || alongEdge(b, d)))) continue;
-      const L = cand.length;
-      const ext = cand.concat(ray);
-      let e = ray.length ? ray[ray.length - 1] : b;
-      for (let i = 0; i < L + 2; i++) { e = [e[0] + d[0], e[1] + d[1], e[2] + d[2]]; ext.push(e); }
-      const id = arrows.length;
-      arrows.push({
-        id, path: cand, dir: d, ray, ext, L,
-        hue: (id * 47 + 190) % 360,
-        state: 'idle', s: 0, v: 5, bump: -1, flash: 0,
-      });
-      for (const c of cand) occ.add(ck(...c));
-      cells += L;
-      break;
+      return { cand, ray, d };
     }
+    return null;
+  }
+
+  while (cells < target && budget > 0) {
+    let best = null, bs = -1, found = 0;
+    while (budget-- > 0 && found < pickN) {
+      const c = build();
+      if (!c) continue;
+      found++;
+      let sc = R() * 0.5;
+      for (const q of c.cand) sc += blockedBy.get(ck(...q)) || 0;
+      if (sc > bs) { bs = sc; best = c; }
+    }
+    if (!best) break;
+    const { cand, ray, d } = best, L = cand.length, b = cand[L - 1];
+    const ext = cand.concat(ray);
+    let e = ray.length ? ray[ray.length - 1] : b;
+    for (let i = 0; i < L + 2; i++) { e = [e[0] + d[0], e[1] + d[1], e[2] + d[2]]; ext.push(e); }
+    const id = arrows.length;
+    arrows.push({
+      id, path: cand, dir: d, ray, ext, L,
+      hue: (id * 47 + 190) % 360,
+      state: 'idle', s: 0, v: 5, bump: -1, flash: 0,
+    });
+    for (const c of cand) occ.add(ck(...c));
+    for (const c of ray) blockedBy.set(ck(...c), (blockedBy.get(ck(...c)) || 0) + 1);
+    cells += L;
   }
   return { P, arrows };
 }
 
-if (typeof module !== 'undefined') module.exports = { generate, params, ck };
+if (typeof module !== 'undefined') module.exports = { generate, params, ck, PITCH };
 
 if (typeof document !== 'undefined') (function () {
   const $ = id => document.getElementById(id);
@@ -220,7 +246,7 @@ if (typeof document !== 'undefined') (function () {
 
   // Outside mode: arrows are flat ribbons lying on the cube's surface.
   function drawFlat(a, clean, head, hue, sat, light) {
-    const N = G.P.W - 1, w = 0.035, lift = 0.012, th = 0.006;
+    const N = G.P.W - 1, w = 0.035 / PITCH, lift = 0.012, th = 0.006;
     const near = (v, t) => Math.abs(v - t) < 1e-6;
     const faceOf = (cands, ref) => {
       let best = null, bz = -9;
@@ -252,7 +278,7 @@ if (typeof document !== 'undefined') (function () {
     const lat = 3 - da - nb.b, sg = a.dir[da];
     const at = (t, p) => { const r = head.slice(); r[da] += sg * t; r[lat] += p; r[nb.b] += nb.sg * lift; return r; };
     const ctr = head.slice(); ctr[nb.b] -= nb.sg * 0.1;
-    emit([at(0.5, 0), at(-0.05, -0.14), at(-0.05, 0.14)], ctr, hue, sat, Math.min(75, light + 8), a.id);
+    emit([at(0.5 / PITCH, 0), at(-0.05, -0.14 / PITCH), at(-0.05, 0.14 / PITCH)], ctr, hue, sat, Math.min(75, light + 8), a.id);
   }
 
   function pyramid(c, d, hue, sat, light, id) {
