@@ -24,35 +24,45 @@ function params(mode, level) {
       maxLen: Math.min(4 + Math.floor(level / 3), 9),
     };
   }
+  if (mode === '3dout') {
+    const n = Math.min(4 + Math.floor(level / 6), 7);
+    return { W: n, H: n, D: n, dens: 0.55, maxLen: Math.min(5 + Math.floor(level / 4), 9) };
+  }
   const n = Math.min(4 + Math.floor(level / 5), 6);
   return { W: n, H: n, D: n, dens: 0.45, maxLen: Math.min(5 + Math.floor(level / 4), 8) };
 }
+
+const SEEDS = { '2d': 1, '3d': 13, '3dout': 29 };
 
 // Arrows are placed one at a time; a new arrow's exit ray may not cross any
 // earlier arrow. Removing them in reverse placement order is then always
 // possible, so every level is solvable.
 function generate(mode, level) {
   const P = params(mode, level);
-  const R = rng(level * 7919 + (mode === '3d' ? 13 : 1));
+  const R = rng(level * 7919 + SEEDS[mode]);
   const { W, H, D } = P;
   const occ = new Set();
   const inb = (x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < W && y < H && z < D;
+  // outside mode: arrows lie flat on the cube's surface, so every cell they
+  // occupy or sweep through must be a surface cell
+  const out = mode === '3dout';
+  const shell = (x, y, z) => x === 0 || y === 0 || z === 0 || x === W - 1 || y === H - 1 || z === D - 1;
   const dirs = mode === '2d' ? DIRS.slice(0, 4) : DIRS;
-  const target = Math.floor(W * H * D * P.dens);
+  const target = Math.floor((out ? W * H * D - (W - 2) * (H - 2) * (D - 2) : W * H * D) * P.dens);
   let cells = 0;
   const arrows = [];
 
   for (let tries = 0; tries < 5000 && cells < target; tries++) {
     const len = 2 + Math.floor(R() * (P.maxLen - 1));
     let p = [Math.floor(R() * W), Math.floor(R() * H), Math.floor(R() * D)];
-    if (occ.has(ck(...p))) continue;
+    if (occ.has(ck(...p)) || (out && !shell(...p))) continue;
     const path = [p];
     const mine = new Set([ck(...p)]);
     let lastd = null;
     while (path.length < len) {
       const opts = dirs.filter(d => {
         const q = [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
-        return inb(...q) && !occ.has(ck(...q)) && !mine.has(ck(...q));
+        return inb(...q) && (!out || shell(...q)) && !occ.has(ck(...q)) && !mine.has(ck(...q));
       });
       if (!opts.length) break;
       const d = (lastd && opts.includes(lastd) && R() < 0.5) ? lastd : opts[Math.floor(R() * opts.length)];
@@ -67,11 +77,11 @@ function generate(mode, level) {
       let q = [b[0] + d[0], b[1] + d[1], b[2] + d[2]];
       let ok = true;
       while (inb(...q)) {
-        if (occ.has(ck(...q)) || mine.has(ck(...q))) { ok = false; break; }
+        if (occ.has(ck(...q)) || mine.has(ck(...q)) || (out && !shell(...q))) { ok = false; break; }
         ray.push(q);
         q = [q[0] + d[0], q[1] + d[1], q[2] + d[2]];
       }
-      if (!ok) continue;
+      if (!ok || (out && !ray.length)) continue;
       const L = cand.length;
       const ext = cand.concat(ray);
       let e = ray.length ? ray[ray.length - 1] : b;
@@ -100,12 +110,15 @@ if (typeof document !== 'undefined') (function () {
   let mode = '2d', level = 1, G = null, owner = null;
   let lives = 3, over = false, hintId = -1, hintT = 0;
   let yaw = -0.7, pitch = 0.5;
-  let faces = [], samples = [], scale = 1, ox = 0, oy = 0, cw = 0, ch = 0;
+  let faces = [], samples = [], solid = [], scale = 1, ox = 0, oy = 0, cw = 0, ch = 0;
   let baseScale = 1, zoom = 1, panX = 0, panY = 0;
   let cY, sY, cP, sP, off = [0, 0, 0];
 
   const store = {
-    get() { try { return JSON.parse(localStorage.getItem('ae_progress')) || { '2d': 1, '3d': 1 }; } catch (e) { return { '2d': 1, '3d': 1 }; } },
+    get() {
+      const d = { '2d': 1, '3d': 1, '3dout': 1 };
+      try { return Object.assign(d, JSON.parse(localStorage.getItem('ae_progress'))); } catch (e) { return d; }
+    },
     set(m, l) { try { const p = store.get(); p[m] = Math.max(p[m] || 1, l); localStorage.setItem('ae_progress', JSON.stringify(p)); } catch (e) { } },
   };
 
@@ -132,7 +145,7 @@ if (typeof document !== 'undefined') (function () {
     lives = 3; over = false; hintId = -1; zoom = 1; panX = panY = 0;
     if (m === '2d') { yaw = 0; pitch = 0; } else { yaw = -0.7; pitch = 0.5; }
     $('menu').classList.add('hide'); $('overlay').classList.add('hide');
-    $('title').textContent = (m === '2d' ? '2D' : '3D') + ' · Level ' + l;
+    $('title').textContent = { '2d': '2D', '3d': '3D Inside', '3dout': '3D Outside' }[m] + ' · Level ' + l;
     updateHud(); resize();
   }
 
@@ -151,7 +164,17 @@ if (typeof document !== 'undefined') (function () {
     return [x1, y * cP - z1 * sP, y * sP + z1 * cP];
   }
 
-  function emit(pts, center, hue, sat, light, id) {
+  // is a camera-space point hidden behind the opaque cube (outside mode)?
+  function occluded(cx, cy, cz) {
+    const sx = ox + cx * scale, sy = oy - cy * scale;
+    for (const f of solid) {
+      if (!inPoly(f.poly, sx, sy)) continue;
+      if (cz < (f.pd - f.n[0] * cx - f.n[1] * cy) / f.n[2] - 0.005) return true;
+    }
+    return false;
+  }
+
+  function emit(pts, center, hue, sat, light, id, dest) {
     const P = pts.map(cam), C = cam(center);
     const u = [P[1][0] - P[0][0], P[1][1] - P[0][1], P[1][2] - P[0][2]];
     const v = [P[2][0] - P[0][0], P[2][1] - P[0][1], P[2][2] - P[0][2]];
@@ -162,15 +185,64 @@ if (typeof document !== 'undefined') (function () {
     if (n[2] <= 0.001) return;
     const lit = Math.max(0, n[0] * LIGHT[0] + n[1] * LIGHT[1] + n[2] * LIGHT[2]);
     const fill = `hsl(${hue} ${sat}% ${Math.min(92, light * (0.6 + 0.55 * lit))}%)`;
-    let z = 0; for (const q of P) z += q[2];
-    faces.push({ poly: P.map(q => [ox + q[0] * scale, oy - q[1] * scale]), z: z / P.length, fill, id });
+    let cx = 0, cy = 0, cz = 0;
+    for (const q of P) { cx += q[0]; cy += q[1]; cz += q[2]; }
+    cx /= P.length; cy /= P.length; cz /= P.length;
+    if (!dest && solid.length && occluded(cx, cy, cz)) return;
+    (dest || faces).push({
+      poly: P.map(q => [ox + q[0] * scale, oy - q[1] * scale]), z: cz, fill, id,
+      n, pd: n[0] * P[0][0] + n[1] * P[0][1] + n[2] * P[0][2],
+    });
   }
 
   const BOXF = [[0, 2, 6, 4], [1, 3, 7, 5], [0, 1, 5, 4], [2, 3, 7, 6], [0, 1, 3, 2], [4, 5, 7, 6]];
-  function box(lo, hi, hue, sat, light, id) {
+  function box(lo, hi, hue, sat, light, id, dest) {
     const c = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
     const k = i => [i & 1 ? hi[0] : lo[0], i & 2 ? hi[1] : lo[1], i & 4 ? hi[2] : lo[2]];
-    for (const f of BOXF) emit(f.map(k), c, hue, sat, light, id);
+    for (const f of BOXF) emit(f.map(k), c, hue, sat, light, id, dest);
+  }
+
+  // z (towards the viewer) of the unit vector along `axis` with sign `sg`
+  function nzOf(axis, sg) {
+    const u = [0, 0, 0]; u[axis] = sg;
+    return u[1] * sP + (-u[0] * sY + u[2] * cY) * cP;
+  }
+
+  // Outside mode: arrows are flat ribbons lying on the cube's surface.
+  function drawFlat(a, clean, head, hue, sat, light) {
+    const N = G.P.W - 1, w = 0.035, lift = 0.012, th = 0.006;
+    const near = (v, t) => Math.abs(v - t) < 1e-6;
+    const faceOf = (cands, ref) => {
+      let best = null, bz = -9;
+      for (const b of cands) {
+        const sg = ref[b] < N / 2 ? -1 : 1, z = nzOf(b, sg);
+        if (z > bz) { bz = z; best = { b, sg }; }
+      }
+      return best;
+    };
+    const clamp = (v, orig) => (orig >= 0 && orig <= N) ? Math.max(0, Math.min(N, v)) : v;
+    for (let j = 0; j + 1 < clean.length; j++) {
+      const A = clean[j], B = clean[j + 1];
+      let sa = 0;
+      for (let k = 1; k < 3; k++) if (Math.abs(B[k] - A[k]) > Math.abs(B[sa] - A[sa])) sa = k;
+      const nb = faceOf([0, 1, 2].filter(b => b !== sa && near(A[b], B[b]) && (near(A[b], 0) || near(A[b], N))), A);
+      if (!nb) continue;
+      const lat = 3 - sa - nb.b, sg = Math.sign(B[sa] - A[sa]) || 1;
+      const s0 = A[sa] - sg * w, s1 = B[sa] + (j + 2 === clean.length ? 0 : sg * w);
+      const e0 = clamp(s0, A[sa]), e1 = clamp(s1, B[sa]);
+      const lo = [0, 0, 0], hi = [0, 0, 0], plane = A[nb.b] + nb.sg * lift;
+      lo[sa] = Math.min(e0, e1); hi[sa] = Math.max(e0, e1);
+      lo[lat] = A[lat] - w; hi[lat] = A[lat] + w;
+      lo[nb.b] = plane - th; hi[nb.b] = plane + th;
+      box(lo, hi, hue, sat, light, a.id);
+    }
+    const da = a.dir[0] ? 0 : a.dir[1] ? 1 : 2;
+    const nb = faceOf([0, 1, 2].filter(b => b !== da && (near(head[b], 0) || near(head[b], N))), head);
+    if (!nb) return;
+    const lat = 3 - da - nb.b, sg = a.dir[da];
+    const at = (t, p) => { const r = head.slice(); r[da] += sg * t; r[lat] += p; r[nb.b] += nb.sg * lift; return r; };
+    const ctr = head.slice(); ctr[nb.b] -= nb.sg * 0.1;
+    emit([at(0.5, 0), at(-0.05, -0.14), at(-0.05, 0.14)], ctr, hue, sat, Math.min(75, light + 8), a.id);
   }
 
   function pyramid(c, d, hue, sat, light, id) {
@@ -205,7 +277,8 @@ if (typeof document !== 'undefined') (function () {
     if (a.flash > 0) { hue = 0; sat = 85; light = 55; }
     else if (a.id === hintId) { sat = 90; light = 58 + 14 * Math.sin(performance.now() / 120); }
     const H = 0.03;
-    for (let j = 0; j + 1 < clean.length; j++) {
+    if (mode === '3dout') drawFlat(a, clean, head, hue, sat, light);
+    else for (let j = 0; j + 1 < clean.length; j++) {
       const A = clean[j], B = clean[j + 1];
       const lo = [Math.min(A[0], B[0]) - H, Math.min(A[1], B[1]) - H, Math.min(A[2], B[2]) - H];
       const hi = [Math.max(A[0], B[0]) + H, Math.max(A[1], B[1]) + H, Math.max(A[2], B[2]) + H];
@@ -216,9 +289,10 @@ if (typeof document !== 'undefined') (function () {
       }
       box(lo, hi, hue, sat, light, a.id);
     }
-    pyramid(head, a.dir, hue, sat, Math.min(75, light + 8), a.id);
+    if (mode !== '3dout') pyramid(head, a.dir, hue, sat, Math.min(75, light + 8), a.id);
     for (let t = 0; t <= a.L - 1; t += 0.5) {
       const q = cam(pointAt(a, s + t));
+      if (solid.length && occluded(q[0], q[1], q[2])) continue;
       samples.push({ id: a.id, x: ox + q[0] * scale, y: oy - q[1] * scale, z: q[2] });
     }
   }
@@ -227,7 +301,7 @@ if (typeof document !== 'undefined') (function () {
     ctx.clearRect(0, 0, cw, ch);
     if (!G) return;
     cY = Math.cos(yaw); sY = Math.sin(yaw); cP = Math.cos(pitch); sP = Math.sin(pitch);
-    faces = []; samples = [];
+    faces = []; samples = []; solid = [];
     scale = baseScale * zoom; ox = cw / 2 + panX; oy = ch / 2 + panY;
     const { W, H, D } = G.P;
 
@@ -236,6 +310,26 @@ if (typeof document !== 'undefined') (function () {
       for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) {
         const q = cam([x, y, 0]);
         ctx.beginPath(); ctx.arc(ox + q[0] * scale, oy - q[1] * scale, 2, 0, 6.3); ctx.fill();
+      }
+    } else if (mode === '3dout') {
+      const N = W - 1;
+      solid = [];
+      box([0, 0, 0], [N, N, N], 222, 22, 30, -1, solid);
+      for (const f of solid) {
+        ctx.fillStyle = f.fill; ctx.strokeStyle = 'rgba(255,255,255,.14)';
+        ctx.beginPath();
+        f.poly.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(255,255,255,.2)';
+      for (let x = 0; x <= N; x++) for (let y = 0; y <= N; y++) for (let z = 0; z <= N; z++) {
+        const c = [x, y, z];
+        for (let ax = 0; ax < 3; ax++) {
+          if (c[ax] !== 0 && c[ax] !== N) continue;
+          if (nzOf(ax, c[ax] ? 1 : -1) <= 0.02) continue;
+          const q = cam(c);
+          ctx.beginPath(); ctx.arc(ox + q[0] * scale, oy - q[1] * scale, 2, 0, 6.3); ctx.fill();
+        }
       }
     } else {
       const cs = [];
@@ -374,7 +468,7 @@ if (typeof document !== 'undefined') (function () {
     if (!down) return;
     if (!down.drag && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) down.drag = true;
     if (down.drag) {
-      if (mode === '3d') {
+      if (mode !== '2d') {
         yaw += (e.clientX - down.lx) * 0.01;
         pitch = Math.max(-1.5, Math.min(1.5, pitch + (e.clientY - down.ly) * 0.01));
       } else if (zoom > 1) {
@@ -399,10 +493,12 @@ if (typeof document !== 'undefined') (function () {
   function showMenu() {
     const p = store.get();
     $('lv2d').textContent = 'Level ' + p['2d']; $('lv3d').textContent = 'Level ' + p['3d'];
+    $('lv3dout').textContent = 'Level ' + p['3dout'];
     $('menu').classList.remove('hide'); $('overlay').classList.add('hide');
   }
   $('play2d').onclick = () => start('2d', store.get()['2d']);
   $('play3d').onclick = () => start('3d', store.get()['3d']);
+  $('play3dout').onclick = () => start('3dout', store.get()['3dout']);
   $('back').onclick = showMenu;
   $('restart').onclick = () => start(mode, level);
   $('hint').onclick = hint;
