@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Arrow Escape 3D</title>
+<style>
+  :root { --bg:#10141f; --panel:#1a2133; --fg:#e8ecf5; --mut:#8791a8; --accent:#4ecdc4; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; overflow:hidden; }
+  #app { display:flex; flex-direction:column; height:100%; }
+  #hud { display:flex; align-items:center; gap:8px; padding:10px 16px; background:var(--panel); }
+  #title { flex:1; font-weight:600; }
+  #lives { color:#ff6b6b; letter-spacing:2px; }
+  button { font:inherit; color:var(--fg); background:#27314a; border:0; border-radius:10px;
+    padding:8px 14px; cursor:pointer; }
+  button:hover { background:#31405f; }
+  button.primary { background:var(--accent); color:#0b1a19; font-weight:700; }
+  #c { flex:1; width:100%; min-height:0; touch-action:none; display:block; }
+  .screen { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:14px; background:rgba(16,20,31,.94); padding:16px; text-align:center; }
+  .hide { display:none; }
+  h1 { margin:0; font-size:2rem; }
+  p { color:var(--mut); max-width:30em; margin:0; line-height:1.45; }
+  .modes { display:flex; flex-direction:column; gap:10px; width:min(320px,100%); }
+  .modes button { padding:16px; font-size:1.1rem; display:flex; justify-content:space-between; }
+  .modes small { color:inherit; opacity:.7; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <button id="back" title="Menu">☰</button>
+    <span id="title"></span>
+    <span id="lives"></span>
+    <button id="hint" title="Hint">💡</button>
+    <button id="restart" title="Restart">↻</button>
+  </div>
+  <canvas id="c"></canvas>
+</div>
+
+<div id="menu" class="screen">
+  <h1>Arrow Escape 3D</h1>
+  <p>Tap an arrow to slide it out the way it points. If another arrow is in its path it bumps and you lose a heart. Clear the board.</p>
+  <div class="modes">
+    <button id="play2d" class="primary"><span>2D Classic</span><small id="lv2d"></small></button>
+    <button id="play3d" class="primary"><span>3D Cube</span><small id="lv3d"></small></button>
+  </div>
+  <p>In 3D, drag to rotate the cube, tap an arrow to launch it.</p>
+</div>
+
+<div id="overlay" class="screen hide">
+  <h1 id="msgTitle"></h1>
+  <p id="msgSub"></p>
+  <button id="msgBtn" class="primary"></button>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
