@@ -18,14 +18,14 @@ const ck = (x, y, z) => x + ',' + y + ',' + z;
 function params(mode, level) {
   if (mode === '2d') {
     return {
-      W: Math.min(4 + Math.floor(level / 3), 9),
-      H: Math.min(5 + Math.floor(level / 2), 13), D: 1,
-      dens: Math.min(0.5 + level * 0.01, 0.68),
+      W: Math.min(5 + Math.floor(level / 3), 9),
+      H: Math.min(7 + Math.floor(level / 2), 13), D: 1,
+      dens: Math.min(0.65 + level * 0.01, 0.72),
       maxLen: Math.min(4 + Math.floor(level / 3), 9),
     };
   }
-  const n = Math.min(3 + Math.floor(level / 4), 6);
-  return { W: n, H: n, D: n, dens: 0.42, maxLen: Math.min(4 + Math.floor(level / 4), 8) };
+  const n = Math.min(4 + Math.floor(level / 5), 6);
+  return { W: n, H: n, D: n, dens: 0.45, maxLen: Math.min(5 + Math.floor(level / 4), 8) };
 }
 
 // Arrows are placed one at a time; a new arrow's exit ray may not cross any
