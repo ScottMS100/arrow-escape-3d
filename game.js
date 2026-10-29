@@ -101,6 +101,7 @@ if (typeof document !== 'undefined') (function () {
   let lives = 3, over = false, hintId = -1, hintT = 0;
   let yaw = -0.7, pitch = 0.5;
   let faces = [], samples = [], scale = 1, ox = 0, oy = 0, cw = 0, ch = 0;
+  let baseScale = 1, zoom = 1, panX = 0, panY = 0;
   let cY, sY, cP, sP, off = [0, 0, 0];
 
   const store = {
@@ -119,9 +120,8 @@ if (typeof document !== 'undefined') (function () {
   function fit() {
     const { W, H, D } = G.P;
     off = [(W - 1) / 2, (H - 1) / 2, (D - 1) / 2];
-    ox = cw / 2; oy = ch / 2;
-    if (mode === '2d') scale = Math.min(cw / (W + 0.6), ch / (H + 0.6));
-    else scale = Math.min(cw, ch) / (Math.hypot(W, H, D) + 0.8);
+    if (mode === '2d') baseScale = Math.min(cw / (W + 0.6), ch / (H + 0.6));
+    else baseScale = Math.min(cw, ch) / (Math.hypot(W, H, D) + 0.8);
   }
 
   function start(m, l) {
@@ -129,7 +129,7 @@ if (typeof document !== 'undefined') (function () {
     G = generate(m, l);
     owner = new Map();
     for (const a of G.arrows) for (const c of a.path) owner.set(ck(...c), a.id);
-    lives = 3; over = false; hintId = -1;
+    lives = 3; over = false; hintId = -1; zoom = 1; panX = panY = 0;
     if (m === '2d') { yaw = 0; pitch = 0; } else { yaw = -0.7; pitch = 0.5; }
     $('menu').classList.add('hide'); $('overlay').classList.add('hide');
     $('title').textContent = (m === '2d' ? '2D' : '3D') + ' · Level ' + l;
@@ -176,7 +176,7 @@ if (typeof document !== 'undefined') (function () {
   function pyramid(c, d, hue, sat, light, id) {
     const ax = d[0] ? 0 : d[1] ? 1 : 2, a1 = (ax + 1) % 3, a2 = (ax + 2) % 3, sg = d[ax];
     const at = (t, p, q) => { const r = c.slice(); r[ax] += sg * t; r[a1] += p; r[a2] += q; return r; };
-    const tip = at(0.5, 0, 0), B = 0.32;
+    const tip = at(0.5, 0, 0), B = 0.1;
     const base = [at(-0.05, -B, -B), at(-0.05, B, -B), at(-0.05, B, B), at(-0.05, -B, B)];
     const ctr = at(0.12, 0, 0);
     for (let i = 0; i < 4; i++) emit([tip, base[i], base[(i + 1) % 4]], ctr, hue, sat, light, id);
@@ -204,7 +204,7 @@ if (typeof document !== 'undefined') (function () {
     let hue = a.hue, sat = 70, light = 55;
     if (a.flash > 0) { hue = 0; sat = 85; light = 55; }
     else if (a.id === hintId) { sat = 90; light = 58 + 14 * Math.sin(performance.now() / 120); }
-    const H = 0.19;
+    const H = 0.03;
     for (let j = 0; j + 1 < clean.length; j++) {
       const A = clean[j], B = clean[j + 1];
       const lo = [Math.min(A[0], B[0]) - H, Math.min(A[1], B[1]) - H, Math.min(A[2], B[2]) - H];
@@ -228,6 +228,7 @@ if (typeof document !== 'undefined') (function () {
     if (!G) return;
     cY = Math.cos(yaw); sY = Math.sin(yaw); cP = Math.cos(pitch); sP = Math.sin(pitch);
     faces = []; samples = [];
+    scale = baseScale * zoom; ox = cw / 2 + panX; oy = ch / 2 + panY;
     const { W, H, D } = G.P;
 
     ctx.fillStyle = 'rgba(255,255,255,.14)';
@@ -328,29 +329,72 @@ if (typeof document !== 'undefined') (function () {
   }
 
   // ---------- input ----------
-  let down = null;
+  const ZMIN = 0.5, ZMAX = 4;
+  const pointers = new Map();
+  let down = null, pinch = null;
+
+  // zoom to `z`, keeping the point under (cx, cy) fixed on screen
+  function zoomAt(z, cx, cy) {
+    z = Math.max(ZMIN, Math.min(ZMAX, z));
+    const k = z / zoom;
+    panX = (cx - cw / 2) - (cx - cw / 2 - panX) * k;
+    panY = (cy - ch / 2) - (cy - ch / 2 - panY) * k;
+    zoom = z;
+  }
+  const rel = e => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const [x, y] = rel(e);
+    zoomAt(zoom * Math.exp(-e.deltaY * (e.deltaMode ? 0.05 : 0.0015)), x, y);
+  }, { passive: false });
+
   canvas.addEventListener('pointerdown', e => {
     canvas.setPointerCapture(e.pointerId);
-    down = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, drag: false };
+    pointers.set(e.pointerId, rel(e));
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, z: zoom, mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2 };
+      down = null;
+    } else if (pointers.size === 1) {
+      down = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, drag: false };
+    }
   });
   canvas.addEventListener('pointermove', e => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, rel(e));
+    if (pinch && pointers.size >= 2) {
+      const [a, b] = [...pointers.values()];
+      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      panX += mx - pinch.mx; panY += my - pinch.my;
+      pinch.mx = mx; pinch.my = my;
+      zoomAt(pinch.z * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch.d, mx, my);
+      return;
+    }
     if (!down) return;
     if (!down.drag && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) down.drag = true;
-    if (down.drag && mode === '3d') {
-      yaw += (e.clientX - down.lx) * 0.01;
-      pitch = Math.max(-1.5, Math.min(1.5, pitch + (e.clientY - down.ly) * 0.01));
+    if (down.drag) {
+      if (mode === '3d') {
+        yaw += (e.clientX - down.lx) * 0.01;
+        pitch = Math.max(-1.5, Math.min(1.5, pitch + (e.clientY - down.ly) * 0.01));
+      } else if (zoom > 1) {
+        panX += e.clientX - down.lx; panY += e.clientY - down.ly;
+      }
     }
     down.lx = e.clientX; down.ly = e.clientY;
   });
-  canvas.addEventListener('pointerup', e => {
-    if (down && !down.drag && G) {
-      const r = canvas.getBoundingClientRect();
-      const id = pick(e.clientX - r.left, e.clientY - r.top);
+  function release(e, canTap) {
+    if (canTap && down && !down.drag && G) {
+      const [x, y] = rel(e);
+      const id = pick(x, y);
       if (id >= 0) tap(id);
     }
-    down = null;
-  });
-  canvas.addEventListener('pointercancel', () => { down = null; });
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = null;
+    down = null; // fingers left after a pinch don't trigger taps
+  }
+  canvas.addEventListener('pointerup', e => release(e, true));
+  canvas.addEventListener('pointercancel', e => release(e, false));
 
   function showMenu() {
     const p = store.get();
