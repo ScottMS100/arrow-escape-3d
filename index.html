@@ -55,10 +55,10 @@
   <div class="modes">
     <button id="play2d" class="primary"><span>2D Classic</span><small id="lv2d"></small></button>
     <button id="play3d" class="primary"><span>3D Cube Inside</span><small id="lv3d"></small></button>
-    <button id="play3dout" class="primary"><span>3D Cube Outside</span><small id="lv3dout"></small></button>
+    <button id="play3dout" class="primary"><span>3D Shapes Outside</span><small id="lv3dout"></small></button>
   </div>
   <label class="opt"><input type="checkbox" id="optDouble"> Double-tap to launch<small>Tap an arrow to highlight it, tap it again within 4 seconds to send it. Handy on a phone.</small></label>
-  <p><b>Inside</b>: a see-through cube of 3D arrows. <b>Outside</b>: a solid cube with flat arrows on its surface. Drag to rotate, scroll or pinch to zoom, tap an arrow to launch it.</p>
+  <p><b>Inside</b>: a see-through cube of 3D arrows. <b>Outside</b>: a solid shape (cube, steps, castle and more, a new one each level) with flat arrows on its surface. Drag to rotate, scroll or pinch to zoom, tap an arrow to launch it.</p>
 </div>
 
 <div id="overlay" class="screen hide">
@@ -67,7 +67,7 @@
   <button id="msgBtn" class="primary"></button>
 </div>
 
-<script src="game.js?v=21"></script>
+<script src="game.js?v=24"></script>
 <script>
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>

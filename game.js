@@ -25,15 +25,77 @@ function params(mode, level) {
     };
   }
   if (mode === '3dout') {
-    // finer lattice: arrows sit PITCH (~51% of the original) apart on the same-sized cube
-    const n = Math.round(Math.min(6 + Math.floor(level / 6), 12) / PITCH);
+    // finer lattice: arrows sit PITCH (~51% of the original) apart on the same-sized solid
+    const E = Math.round(Math.min(6 + Math.floor(level / 6), 12) / PITCH) - 1;
+    const def = SHAPES[(level - 1) % SHAPES.length];
+    const T = Math.max(3, Math.round(E / Math.max(...def.boxes.flatMap(b => b.slice(3)))));
+    const shape = makeShape(def, T);
     return {
-      W: n, H: n, D: n, dens: Math.min(0.65 + level * 0.005, 0.8),
+      W: shape.E[0] + 1, H: shape.E[1] + 1, D: shape.E[2] + 1, shape,
+      dens: Math.min(0.65 + level * 0.005, 0.8),
       maxLen: Math.round(Math.min(5 + Math.floor(level / 4), 14) / PITCH),
     };
   }
   const n = Math.min(5 + Math.floor(level / 4), 12);
   return { W: n, H: n, D: n, dens: Math.min(0.6 + level * 0.005, 0.8), maxLen: Math.min(6 + Math.floor(level / 3), 16) };
+}
+
+// Outside-mode solids are unions of axis-aligned blocks ([x0,y0,z0,x1,y1,z1] in
+// block units); each block is T x T x T unit cubes on the arrow lattice.
+const SHAPES = [
+  { name: 'Cube', boxes: [[0, 0, 0, 3, 3, 3]] },
+  { name: 'L-block', boxes: [[0, 0, 0, 4, 3, 2], [0, 0, 2, 2, 3, 4]] },
+  { name: 'Steps', boxes: [[0, 0, 0, 1, 3, 1], [1, 0, 0, 2, 3, 2], [2, 0, 0, 3, 3, 3], [3, 0, 0, 4, 3, 4]] },
+  { name: 'Trough', boxes: [[0, 0, 0, 4, 3, 1], [0, 0, 1, 1, 3, 3], [3, 0, 1, 4, 3, 3]] },
+  { name: 'T-block', boxes: [[0, 0, 0, 4, 2, 2], [1, 2, 0, 3, 4, 2]] },
+  { name: 'Cross', boxes: [[1, 0, 1, 2, 3, 2], [0, 1, 1, 3, 2, 2], [1, 1, 0, 2, 2, 3]] },
+  { name: 'Pyramid', boxes: [[0, 0, 0, 5, 5, 1], [1, 1, 1, 4, 4, 2], [2, 2, 2, 3, 3, 3]] },
+  { name: 'Castle', boxes: [[0, 0, 0, 5, 5, 1], [0, 0, 1, 1, 1, 3], [4, 0, 1, 5, 1, 3], [0, 4, 1, 1, 5, 3], [4, 4, 1, 5, 5, 3], [2, 2, 1, 3, 3, 2]] },
+];
+
+function makeShape(def, T) {
+  let bw = 0, bh = 0, bd = 0;
+  for (const b of def.boxes) { bw = Math.max(bw, b[3]); bh = Math.max(bh, b[4]); bd = Math.max(bd, b[5]); }
+  const blk = new Uint8Array(bw * bh * bd);
+  for (const [x0, y0, z0, x1, y1, z1] of def.boxes)
+    for (let x = x0; x < x1; x++) for (let y = y0; y < y1; y++) for (let z = z0; z < z1; z++) blk[(x * bh + y) * bd + z] = 1;
+  const blockSolid = (x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < bw && y < bh && z < bd && blk[(x * bh + y) * bd + z] === 1;
+  // is the unit cube [i,i+1]x[j,j+1]x[k,k+1] part of the solid?
+  const solid = (i, j, k) => i >= 0 && j >= 0 && k >= 0 && blockSolid((i / T) | 0, (j / T) | 0, (k / T) | 0);
+  return { name: def.name, T, bw, bh, bd, blockSolid, solid, E: [bw * T, bh * T, bd * T] };
+}
+
+// Classify the unit lattice segment from p along axis a by the four unit cubes around it:
+// 0 = open air, -1 = anything else (inside, on an edge, ...), or 1 + 2*b + (sg > 0) when it
+// lies flat in a face whose outward normal is sg along axis b.
+function segCode(sh, p, a) {
+  const u = (a + 1) % 3, v = (a + 2) % 3, c = [0, 0, 0];
+  c[a] = p[a];
+  let mask = 0;
+  for (let du = 0; du < 2; du++) for (let dv = 0; dv < 2; dv++) {
+    c[u] = p[u] - 1 + du; c[v] = p[v] - 1 + dv;
+    if (sh.solid(c[0], c[1], c[2])) mask |= 1 << (du * 2 + dv);
+  }
+  if (mask === 0) return 0;
+  if (mask === 3) return 1 + 2 * u + 1;
+  if (mask === 12) return 1 + 2 * u;
+  if (mask === 5) return 1 + 2 * v + 1;
+  if (mask === 10) return 1 + 2 * v;
+  return -1;
+}
+// the same for a step from p along direction vector d (either sign)
+function stepCode(sh, p, d) {
+  const a = d[0] ? 0 : d[1] ? 1 : 2, q = p.slice();
+  if (d[a] < 0) q[a]--;
+  return segCode(sh, q, a);
+}
+// 0 = not on the surface, 1 = flat interior of a face, 2 = on an edge or corner
+function ptKind(sh, p) {
+  let n = 0, mask = 0;
+  for (let i = 0; i < 8; i++) if (sh.solid(p[0] - 1 + (i & 1), p[1] - 1 + (i >> 1 & 1), p[2] - 1 + (i >> 2))) { n++; mask |= 1 << i; }
+  if (n === 0 || n === 8) return 0;
+  if (n === 4 && [0x55, 0xAA, 0x33, 0xCC, 0x0F, 0xF0].includes(mask)) return 1;
+  return 2;
 }
 
 const PITCH = 0.4875; // outside mode: lattice spacing relative to the original
@@ -161,20 +223,36 @@ function generate(mode, level) {
   const { W, H, D } = P;
   const occ = new Set();
   const inb = (x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < W && y < H && z < D;
-  // outside mode: arrows lie flat on the cube's surface, so every cell they
-  // occupy or sweep through must be a surface cell
+  // outside mode: arrows lie flat on the surface of a solid, so every cell they
+  // occupy or sweep over must be a surface point and every step a flat face segment
   const out = mode === '3dout';
-  const shell = (x, y, z) => x === 0 || y === 0 || z === 0 || x === W - 1 || y === H - 1 || z === D - 1;
-  // outside mode: a step along `d` from p runs along a cube edge if both other
-  // coordinates sit on the boundary; arrows may cross an edge but not follow one
-  const alongEdge = (p, d) => {
-    let k = 0;
-    for (let ax = 0; ax < 3; ax++) if (!d[ax] && (p[ax] === 0 || p[ax] === (ax ? (ax === 1 ? H : D) : W) - 1)) k++;
-    return k >= 2;
-  };
-  const onEdge = c => c.filter((v, ax) => v === 0 || v === (ax ? (ax === 1 ? H : D) : W) - 1).length >= 2;
+  const sh = P.shape;
+  const surf = [];
+  if (out) for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) for (let z = 0; z < D; z++) if (ptKind(sh, [x, y, z])) surf.push([x, y, z]);
+  const inBox = q => q[0] >= 0 && q[1] >= 0 && q[2] >= 0 && q[0] < W && q[1] < H && q[2] < D;
+  // cells an arrow would sweep over leaving the surface along d from head b, or null
+  // if it runs into a wall, along an edge or into another part of the shape
+  function rayOut(b, d, plane, mine) {
+    const cells = [];
+    let p = b;
+    for (;;) {
+      const q = [p[0] + d[0], p[1] + d[1], p[2] + d[2]], code = stepCode(sh, p, d);
+      if (code === plane) {
+        if (occ.has(ck(...q)) || mine.has(ck(...q))) return null;
+        cells.push(q); p = q;
+        continue;
+      }
+      if (code !== 0 || !cells.length) return null;
+      for (;;) {
+        const r = [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
+        if (!inBox(r)) return cells;
+        if (stepCode(sh, p, d) !== 0 || ptKind(sh, r)) return null;
+        p = r;
+      }
+    }
+  }
   const dirs = mode === '2d' ? DIRS.slice(0, 4) : DIRS;
-  const target = Math.floor((out ? W * H * D - (W - 2) * (H - 2) * (D - 2) : W * H * D) * P.dens);
+  const target = Math.floor((out ? surf.length : W * H * D) * P.dens);
   // Harder levels compare more candidates per arrow and keep the one that
   // blocks the most earlier arrows' exits, which builds deeper dependency chains.
   const pickN = mode === '2d' ? Math.min(40 + level * 2, 120) : Math.min(8 + Math.floor(level * 0.75), 40);
@@ -185,15 +263,15 @@ function generate(mode, level) {
   // random arrow whose exit ray crosses no existing arrow, or null
   function build() {
     const len = 2 + Math.floor(R() * (P.maxLen - 1));
-    let p = [Math.floor(R() * W), Math.floor(R() * H), Math.floor(R() * D)];
-    if (occ.has(ck(...p)) || (out && !shell(...p))) return null;
+    let p = out ? surf[Math.floor(R() * surf.length)].slice() : [Math.floor(R() * W), Math.floor(R() * H), Math.floor(R() * D)];
+    if (occ.has(ck(...p))) return null;
     const path = [p];
     const mine = new Set([ck(...p)]);
     let lastd = null;
     while (path.length < len) {
       const opts = dirs.filter(d => {
         const q = [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
-        return inb(...q) && (!out || (shell(...q) && !alongEdge(p, d))) && !occ.has(ck(...q)) && !mine.has(ck(...q));
+        return (out ? stepCode(sh, p, d) > 0 : inb(...q)) && !occ.has(ck(...q)) && !mine.has(ck(...q));
       });
       if (!opts.length) break;
       const d = (lastd && opts.includes(lastd) && R() < 0.5) ? lastd : opts[Math.floor(R() * opts.length)];
@@ -202,20 +280,25 @@ function generate(mode, level) {
     }
     if (path.length < 2) return null;
     // outside mode: an arrow may bend over an edge but never starts or ends on one
-    if (out && (onEdge(path[0]) || onEdge(path[path.length - 1]))) return null;
+    if (out && (ptKind(sh, path[0]) === 2 || ptKind(sh, path[path.length - 1]) === 2)) return null;
     const tries = R() < 0.5 ? [path, path.slice().reverse()] : [path.slice().reverse(), path];
     for (const cand of tries) {
       const a = cand[cand.length - 2], b = cand[cand.length - 1];
       const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-      const ray = [];
-      let q = [b[0] + d[0], b[1] + d[1], b[2] + d[2]];
-      let ok = true;
-      while (inb(...q)) {
-        if (occ.has(ck(...q)) || mine.has(ck(...q)) || (out && !shell(...q))) { ok = false; break; }
-        ray.push(q);
-        q = [q[0] + d[0], q[1] + d[1], q[2] + d[2]];
+      let ray = [];
+      if (out) {
+        ray = rayOut(b, d, stepCode(sh, a, [b[0] - a[0], b[1] - a[1], b[2] - a[2]]), mine);
+        if (!ray) continue;
+      } else {
+        let q = [b[0] + d[0], b[1] + d[1], b[2] + d[2]];
+        let ok = true;
+        while (inb(...q)) {
+          if (occ.has(ck(...q)) || mine.has(ck(...q))) { ok = false; break; }
+          ray.push(q);
+          q = [q[0] + d[0], q[1] + d[1], q[2] + d[2]];
+        }
+        if (!ok) continue;
       }
-      if (!ok || (out && (!ray.length || alongEdge(b, d)))) continue;
       return { cand, ray, d };
     }
     return null;
@@ -263,7 +346,7 @@ if (typeof document !== 'undefined') (function () {
   const settings = { doubleTap: false };
   try { Object.assign(settings, JSON.parse(localStorage.getItem('ae_settings'))); } catch (e) { }
   let yaw = -0.7, pitch = 0.5;
-  let faces = [], samples = [], solid = [], scale = 1, ox = 0, oy = 0, cw = 0, ch = 0;
+  let faces = [], samples = [], solid = [], buckets = null, curRank = -1, scale = 1, ox = 0, oy = 0, cw = 0, ch = 0;
   let baseScale = 1, zoom = 1, panX = 0, panY = 0;
   let cY, sY, cP, sP, off = [0, 0, 0];
 
@@ -293,13 +376,34 @@ if (typeof document !== 'undefined') (function () {
   function start(m, l) {
     mode = m; level = l;
     G = generate(m, l);
+    if (m === '3dout') Object.assign(G, buildBlocks(G.P.shape));
     owner = new Map();
     for (const a of G.arrows) for (const c of a.path) owner.set(ck(...c), a.id);
     lives = 3; over = false; hintId = -1; selId = -1; zoom = 1; panX = panY = 0;
     if (m === '2d') { yaw = 0; pitch = 0; } else { yaw = -0.7; pitch = 0.5; }
     $('menu').classList.add('hide'); $('overlay').classList.add('hide');
-    $('title').textContent = { '2d': '2D', '3d': '3D Inside', '3dout': '3D Outside' }[m] + ' · Level ' + l;
+    $('title').textContent = { '2d': '2D', '3d': '3D Inside', '3dout': '3D Outside' }[m] + ' · Level ' + l + (m === '3dout' ? ' · ' + G.P.shape.name : '');
     updateHud(); resize();
+  }
+
+  // exposed block faces of an Outside-mode solid, with the dots drawn on them
+  function buildBlocks(sh) {
+    const T = sh.T, blocks = [], bmap = new Array(sh.bw * sh.bh * sh.bd).fill(null);
+    for (let x = 0; x < sh.bw; x++) for (let y = 0; y < sh.bh; y++) for (let z = 0; z < sh.bd; z++) {
+      if (!sh.blockSolid(x, y, z)) continue;
+      const bi = [x, y, z], B = { center: [(x + 0.5) * T, (y + 0.5) * T, (z + 0.5) * T], faces: [], rank: 0, z: 0, draw: [] };
+      for (let a = 0; a < 3; a++) for (const sg of [-1, 1]) {
+        const nb = bi.slice(); nb[a] += sg;
+        if (sh.blockSolid(...nb)) continue;
+        const u = (a + 1) % 3, v = (a + 2) % 3, c = (bi[a] + (sg > 0 ? 1 : 0)) * T, u0 = bi[u] * T, v0 = bi[v] * T;
+        const pt = (uu, vv) => { const r = [0, 0, 0]; r[a] = c; r[u] = uu; r[v] = vv; return r; };
+        const dots = [];
+        for (let i = 0; i <= T; i++) for (let j = 0; j <= T; j++) dots.push(pt(u0 + i, v0 + j));
+        B.faces.push({ pts: [pt(u0, v0), pt(u0 + T, v0), pt(u0 + T, v0 + T), pt(u0, v0 + T)], dots });
+      }
+      bmap[(x * sh.bh + y) * sh.bd + z] = B; blocks.push(B);
+    }
+    return { blocks, bmap };
   }
 
   function updateHud() { $('lives').textContent = '♥'.repeat(lives) + '♡'.repeat(3 - lives); }
@@ -321,14 +425,16 @@ if (typeof document !== 'undefined') (function () {
   function occluded(cx, cy, cz) {
     const sx = ox + cx * scale, sy = oy - cy * scale;
     for (const f of solid) {
-      if (!inPoly(f.poly, sx, sy)) continue;
+      if (sx < f.x0 || sx > f.x1 || sy < f.y0 || sy > f.y1 || !inPoly(f.poly, sx, sy)) continue;
       if (cz < (f.pd - f.n[0] * cx - f.n[1] * cy) / f.n[2] - 0.005) return true;
     }
     return false;
   }
 
-  function emit(pts, center, hue, sat, light, id, dest) {
-    const P = pts.map(cam), C = cam(center);
+  function emit(pts, center, hue, sat, light, id, dest) { emitCam(pts.map(cam), cam(center), hue, sat, light, id, dest); }
+
+  // same, for points already in camera space
+  function emitCam(P, C, hue, sat, light, id, dest) {
     const u = [P[1][0] - P[0][0], P[1][1] - P[0][1], P[1][2] - P[0][2]];
     const v = [P[2][0] - P[0][0], P[2][1] - P[0][1], P[2][2] - P[0][2]];
     let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
@@ -342,17 +448,24 @@ if (typeof document !== 'undefined') (function () {
     for (const q of P) { cx += q[0]; cy += q[1]; cz += q[2]; }
     cx /= P.length; cy /= P.length; cz /= P.length;
     if (!dest && solid.length && occluded(cx, cy, cz)) return;
-    (dest || faces).push({
-      poly: P.map(q => [ox + q[0] * scale, oy - q[1] * scale]), z: cz, fill, id,
+    const poly = P.map(q => [ox + q[0] * scale, oy - q[1] * scale]);
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    for (const q of poly) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1]; }
+    const f = {
+      poly, z: cz, fill, id, x0, x1, y0, y1,
       n, pd: n[0] * P[0][0] + n[1] * P[0][1] + n[2] * P[0][2],
-    });
+    };
+    (dest || faces).push(f);
+    if (!dest && curRank >= 0 && buckets) buckets[curRank].push(f);
   }
 
   const BOXF = [[0, 2, 6, 4], [1, 3, 7, 5], [0, 1, 5, 4], [2, 3, 7, 6], [0, 1, 3, 2], [4, 5, 7, 6]];
   function box(lo, hi, hue, sat, light, id, dest) {
     const c = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
-    const k = i => [i & 1 ? hi[0] : lo[0], i & 2 ? hi[1] : lo[1], i & 4 ? hi[2] : lo[2]];
-    for (const f of BOXF) emit(f.map(k), c, hue, sat, light, id, dest);
+    const K = [];
+    for (let i = 0; i < 8; i++) K.push(cam([i & 1 ? hi[0] : lo[0], i & 2 ? hi[1] : lo[1], i & 4 ? hi[2] : lo[2]]));
+    const C = cam(c);
+    for (const f of BOXF) emitCam([K[f[0]], K[f[1]], K[f[2]], K[f[3]]], C, hue, sat, light, id, dest);
   }
 
   // z (towards the viewer) of the unit vector along `axis` with sign `sg`
@@ -361,41 +474,63 @@ if (typeof document !== 'undefined') (function () {
     return u[1] * sP + (-u[0] * sY + u[2] * cY) * cP;
   }
 
-  // Outside mode: arrows are flat ribbons lying on the cube's surface.
+  // Outside mode: arrows are flat ribbons lying on the solid's surface.
+  // Each piece is drawn right after the block faces it lies on (see render).
   function drawFlat(a, clean, head, hue, sat, light) {
-    const N = G.P.W - 1, w = 0.035 / PITCH, lift = 0.012, th = 0.006;
-    const near = (v, t) => Math.abs(v - t) < 1e-6;
-    const faceOf = (cands, ref) => {
-      let best = null, bz = -9;
-      for (const b of cands) {
-        const sg = ref[b] < N / 2 ? -1 : 1, z = nzOf(b, sg);
-        if (z > bz) { bz = z; best = { b, sg }; }
+    const sh = G.P.shape, T = sh.T, w = 0.035 / PITCH, lift = 0.012, th = 0.006;
+    const near = v => Math.abs(v - Math.round(v)) < 1e-6;
+    // draw rank of the latest block among the exposed faces around a unit segment
+    const rankOf = (p, sa, nb, nsg) => {
+      const q = p.slice(); q[sa]++;
+      const ax = [0, 1, 2].filter(k => k !== nb);
+      let best = 0;
+      for (const e of [p, q]) for (let du = 0; du < 2; du++) for (let dv = 0; dv < 2; dv++) {
+        const c = [0, 0, 0];
+        c[nb] = nsg > 0 ? e[nb] - 1 : e[nb]; c[ax[0]] = e[ax[0]] - 1 + du; c[ax[1]] = e[ax[1]] - 1 + dv;
+        const f = c.slice(); f[nb] += nsg;
+        if (!sh.solid(...c) || sh.solid(...f)) continue;
+        const B = G.bmap[(((c[0] / T) | 0) * sh.bh + ((c[1] / T) | 0)) * sh.bd + ((c[2] / T) | 0)];
+        if (B) best = Math.max(best, B.rank);
       }
       return best;
     };
-    const clamp = (v, orig) => (orig >= 0 && orig <= N) ? Math.max(0, Math.min(N, v)) : v;
     for (let j = 0; j + 1 < clean.length; j++) {
       const A = clean[j], B = clean[j + 1];
       let sa = 0;
       for (let k = 1; k < 3; k++) if (Math.abs(B[k] - A[k]) > Math.abs(B[sa] - A[sa])) sa = k;
-      const nb = faceOf([0, 1, 2].filter(b => b !== sa && near(A[b], B[b]) && (near(A[b], 0) || near(A[b], N))), A);
-      if (!nb) continue;
-      const lat = 3 - sa - nb.b, sg = Math.sign(B[sa] - A[sa]) || 1;
-      const s0 = A[sa] - sg * w, s1 = B[sa] + (j + 2 === clean.length ? 0 : sg * w);
-      const e0 = clamp(s0, A[sa]), e1 = clamp(s1, B[sa]);
-      const lo = [0, 0, 0], hi = [0, 0, 0], plane = A[nb.b] + nb.sg * lift;
+      const p = A.map(Math.round);
+      p[sa] = Math.floor(Math.min(A[sa], B[sa]) + 1e-6);
+      const code = segCode(sh, p, sa);
+      if (code < 1) continue; // off the surface (the part already past an edge)
+      const nb = (code - 1) >> 1, nsg = (code - 1) & 1 ? 1 : -1;
+      const lat = 3 - sa - nb, sg = Math.sign(B[sa] - A[sa]) || 1;
+      // a ribbon end overhangs by w only where the face carries on in that direction
+      const more = (v, dir) => {
+        if (!near(v)) return true;
+        const q = p.slice(); q[sa] = dir > 0 ? Math.round(v) : Math.round(v) - 1;
+        return segCode(sh, q, sa) === code;
+      };
+      const e0 = more(A[sa], -sg) ? A[sa] - sg * w : A[sa];
+      const e1 = j + 2 === clean.length || !more(B[sa], sg) ? B[sa] : B[sa] + sg * w;
+      const lo = [0, 0, 0], hi = [0, 0, 0], plane = A[nb] + nsg * lift;
       lo[sa] = Math.min(e0, e1); hi[sa] = Math.max(e0, e1);
       lo[lat] = A[lat] - w; hi[lat] = A[lat] + w;
-      lo[nb.b] = plane - th; hi[nb.b] = plane + th;
+      lo[nb] = plane - th; hi[nb] = plane + th;
+      curRank = rankOf(p, sa, nb, nsg);
       box(lo, hi, hue, sat, light, a.id);
     }
-    const da = a.dir[0] ? 0 : a.dir[1] ? 1 : 2;
-    const nb = faceOf([0, 1, 2].filter(b => b !== da && (near(head[b], 0) || near(head[b], N))), head);
-    if (!nb) return;
-    const lat = 3 - da - nb.b, sg = a.dir[da];
-    const at = (t, p) => { const r = head.slice(); r[da] += sg * t; r[lat] += p; r[nb.b] += nb.sg * lift; return r; };
-    const ctr = head.slice(); ctr[nb.b] -= nb.sg * 0.1;
-    emit([at(-0.05 + 0.7 * (0.5 / PITCH + 0.05), 0), at(-0.05, -0.098 / PITCH), at(-0.05, 0.098 / PITCH)], ctr, hue, sat, Math.min(75, light + 8), a.id);
+    const da = a.dir[0] ? 0 : a.dir[1] ? 1 : 2, sg = a.dir[da];
+    const hp = head.map(Math.round);
+    hp[da] = sg > 0 ? Math.ceil(head[da] - 1e-6) - 1 : Math.floor(head[da] + 1e-6);
+    const code = segCode(sh, hp, da);
+    if (code >= 1) {
+      const nb = (code - 1) >> 1, nsg = (code - 1) & 1 ? 1 : -1, lat = 3 - da - nb;
+      const at = (t, p) => { const r = head.slice(); r[da] += sg * t; r[lat] += p; r[nb] += nsg * lift; return r; };
+      const ctr = head.slice(); ctr[nb] -= nsg * 0.1;
+      curRank = rankOf(hp, da, nb, nsg);
+      emit([at(-0.05 + 0.7 * (0.5 / PITCH + 0.05), 0), at(-0.05, -0.098 / PITCH), at(-0.05, 0.098 / PITCH)], ctr, hue, sat, Math.min(75, light + 8), a.id);
+    }
+    curRank = -1;
   }
 
   function pyramid(c, d, hue, sat, light, id) {
@@ -455,7 +590,8 @@ if (typeof document !== 'undefined') (function () {
     ctx.clearRect(0, 0, cw, ch);
     if (!G) return;
     cY = Math.cos(yaw); sY = Math.sin(yaw); cP = Math.cos(pitch); sP = Math.sin(pitch);
-    faces = []; samples = []; solid = [];
+    faces = []; samples = []; solid = []; buckets = null;
+    let order = null;
     scale = baseScale * zoom; ox = cw / 2 + panX; oy = ch / 2 + panY;
     const { W, H, D } = G.P;
 
@@ -466,25 +602,20 @@ if (typeof document !== 'undefined') (function () {
         ctx.beginPath(); ctx.arc(ox + q[0] * scale, oy - q[1] * scale, 2, 0, 6.3); ctx.fill();
       }
     } else if (mode === '3dout') {
-      const N = W - 1;
+      // blocks are drawn back to front, each followed by the arrow pieces lying on it
+      for (const B of G.blocks) { B.z = cam(B.center)[2]; B.draw = []; }
+      order = G.blocks.slice().sort((p, q) => p.z - q.z);
       solid = [];
-      box([0, 0, 0], [N, N, N], 222, 22, 30, -1, solid);
-      for (const f of solid) {
-        ctx.fillStyle = f.fill; ctx.strokeStyle = 'rgba(255,255,255,.14)';
-        ctx.beginPath();
-        f.poly.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
-        ctx.closePath(); ctx.fill(); ctx.stroke();
-      }
-      ctx.fillStyle = 'rgba(255,255,255,.2)';
-      for (let x = 0; x <= N; x++) for (let y = 0; y <= N; y++) for (let z = 0; z <= N; z++) {
-        const c = [x, y, z];
-        for (let ax = 0; ax < 3; ax++) {
-          if (c[ax] !== 0 && c[ax] !== N) continue;
-          if (nzOf(ax, c[ax] ? 1 : -1) <= 0.02) continue;
-          const q = cam(c);
-          ctx.beginPath(); ctx.arc(ox + q[0] * scale, oy - q[1] * scale, 2, 0, 6.3); ctx.fill();
+      order.forEach((B, i) => {
+        B.rank = i;
+        for (const f of B.faces) {
+          const n = B.draw.length;
+          emit(f.pts, B.center, 222, 22, 30, -1, B.draw);
+          if (B.draw.length > n) B.draw[n].dots = f.dots;
         }
-      }
+        solid.push(...B.draw);
+      });
+      buckets = order.map(() => []);
     } else {
       const cs = [];
       for (let i = 0; i < 8; i++) cs.push(cam([i & 1 ? W - 0.5 : -0.5, i & 2 ? H - 0.5 : -0.5, i & 4 ? D - 0.5 : -0.5]));
@@ -499,12 +630,29 @@ if (typeof document !== 'undefined') (function () {
     for (const a of G.arrows) if (a.state !== 'gone') drawArrow(a);
     faces.sort((p, q) => p.z - q.z);
     ctx.lineWidth = 1; ctx.lineJoin = 'round';
-    for (const f of faces) {
-      ctx.fillStyle = f.fill; ctx.strokeStyle = f.fill;
+    const poly = (f, stroke) => {
+      ctx.fillStyle = f.fill; ctx.strokeStyle = stroke || f.fill;
       ctx.beginPath();
       f.poly.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
       ctx.closePath(); ctx.fill(); ctx.stroke();
-    }
+    };
+    if (order) {
+      for (const B of order) {
+        for (const f of B.draw) {
+          poly(f, 'rgba(255,255,255,.14)');
+          ctx.fillStyle = 'rgba(255,255,255,.2)';
+          ctx.beginPath();
+          for (const d of f.dots) {
+            const q = cam(d), x = ox + q[0] * scale;
+            ctx.moveTo(x + 2, oy - q[1] * scale); ctx.arc(x, oy - q[1] * scale, 2, 0, 6.3);
+          }
+          ctx.fill();
+        }
+        const bk = buckets[B.rank];
+        bk.sort((p, q) => p.z - q.z);
+        for (const f of bk) poly(f);
+      }
+    } else for (const f of faces) poly(f);
   }
 
   // ---------- game ----------
