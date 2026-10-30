@@ -32,8 +32,8 @@ function params(mode, level) {
       maxLen: Math.round(Math.min(5 + Math.floor(level / 4), 14) / PITCH),
     };
   }
-  const n = Math.min(4 + Math.floor(level / 5), 9);
-  return { W: n, H: n, D: n, dens: Math.min(0.45 + level * 0.005, 0.6), maxLen: Math.min(5 + Math.floor(level / 4), 12) };
+  const n = Math.min(5 + Math.floor(level / 4), 12);
+  return { W: n, H: n, D: n, dens: Math.min(0.6 + level * 0.005, 0.8), maxLen: Math.min(6 + Math.floor(level / 3), 16) };
 }
 
 const PITCH = 0.4875; // outside mode: lattice spacing relative to the original
