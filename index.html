@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>Arrow Escape 3D</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#10141f">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <style>
   :root { --bg:#10141f; --panel:#1a2133; --fg:#e8ecf5; --mut:#8791a8; --accent:#4ecdc4; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -62,6 +66,9 @@
   <button id="msgBtn" class="primary"></button>
 </div>
 
-<script src="game.js?v=14"></script>
+<script src="game.js?v=15"></script>
+<script>
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
 </body>
 </html>
