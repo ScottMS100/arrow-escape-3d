@@ -64,10 +64,10 @@ function generate(mode, level) {
   const target = Math.floor((out ? W * H * D - (W - 2) * (H - 2) * (D - 2) : W * H * D) * P.dens);
   // Harder levels compare more candidates per arrow and keep the one that
   // blocks the most earlier arrows' exits, which builds deeper dependency chains.
-  const pickN = Math.min(8 + Math.floor(level * 0.75), 40);
+  const pickN = mode === '2d' ? Math.min(40 + level * 2, 120) : Math.min(8 + Math.floor(level * 0.75), 40);
   const blockedBy = new Map(); // cell -> number of earlier arrows whose exit ray crosses it
   const arrows = [];
-  let cells = 0, budget = Math.max(5000, W * H * D * (mode === '2d' ? 40 : 12));
+  let cells = 0, budget = Math.max(5000, W * H * D * (mode === '2d' ? 60 : 12));
 
   // random arrow whose exit ray crosses no existing arrow, or null
   function build() {
