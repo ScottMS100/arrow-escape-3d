@@ -521,8 +521,9 @@ if (typeof document !== 'undefined') (function () {
     if (!down.drag && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) down.drag = true;
     if (down.drag) {
       if (mode !== '2d') {
-        yaw += (e.clientX - down.lx) * 0.01;
-        pitch = Math.max(-1.5, Math.min(1.5, pitch + (e.clientY - down.ly) * 0.01));
+        // pitch wraps freely; when the cube is upside down, flip horizontal drag so it still follows the finger
+        yaw += (e.clientX - down.lx) * 0.01 * (Math.cos(pitch) < 0 ? -1 : 1);
+        pitch = (pitch + (e.clientY - down.ly) * 0.01) % (2 * Math.PI);
       } else if (zoom > 1) {
         panX += e.clientX - down.lx; panY += e.clientY - down.ly;
       }
