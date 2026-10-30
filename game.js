@@ -18,10 +18,10 @@ const ck = (x, y, z) => x + ',' + y + ',' + z;
 function params(mode, level) {
   if (mode === '2d') {
     return {
-      W: Math.min(5 + Math.floor(level / 3), 14),
-      H: Math.min(7 + Math.floor(level / 2), 20), D: 1,
-      dens: Math.min(0.65 + level * 0.01, 0.78),
-      maxLen: Math.min(4 + Math.floor(level / 3), 14),
+      W: Math.min(7 + Math.floor(level / 2), 16),
+      H: Math.min(10 + Math.floor(level * 0.75), 24), D: 1,
+      dens: Math.min(0.74 + level * 0.01, 0.86),
+      maxLen: Math.min(6 + Math.floor(level / 3), 12),
     };
   }
   if (mode === '3dout') {
@@ -67,7 +67,7 @@ function generate(mode, level) {
   const pickN = Math.min(8 + Math.floor(level * 0.75), 40);
   const blockedBy = new Map(); // cell -> number of earlier arrows whose exit ray crosses it
   const arrows = [];
-  let cells = 0, budget = Math.max(5000, W * H * D * 12);
+  let cells = 0, budget = Math.max(5000, W * H * D * (mode === '2d' ? 40 : 12));
 
   // random arrow whose exit ray crosses no existing arrow, or null
   function build() {
