@@ -282,13 +282,13 @@ if (typeof document !== 'undefined') (function () {
     const lat = 3 - da - nb.b, sg = a.dir[da];
     const at = (t, p) => { const r = head.slice(); r[da] += sg * t; r[lat] += p; r[nb.b] += nb.sg * lift; return r; };
     const ctr = head.slice(); ctr[nb.b] -= nb.sg * 0.1;
-    emit([at(0.5 / PITCH, 0), at(-0.05, -0.14 / PITCH), at(-0.05, 0.14 / PITCH)], ctr, hue, sat, Math.min(75, light + 8), a.id);
+    emit([at(-0.05 + 0.7 * (0.5 / PITCH + 0.05), 0), at(-0.05, -0.098 / PITCH), at(-0.05, 0.098 / PITCH)], ctr, hue, sat, Math.min(75, light + 8), a.id);
   }
 
   function pyramid(c, d, hue, sat, light, id) {
     const ax = d[0] ? 0 : d[1] ? 1 : 2, a1 = (ax + 1) % 3, a2 = (ax + 2) % 3, sg = d[ax];
     const at = (t, p, q) => { const r = c.slice(); r[ax] += sg * t; r[a1] += p; r[a2] += q; return r; };
-    const tip = at(0.5, 0, 0), B = 0.1;
+    const tip = at(0.335, 0, 0), B = 0.07;
     const base = [at(-0.05, -B, -B), at(-0.05, B, -B), at(-0.05, B, B), at(-0.05, -B, B)];
     const ctr = at(0.12, 0, 0);
     for (let i = 0; i < 4; i++) emit([tip, base[i], base[(i + 1) % 4]], ctr, hue, sat, light, id);
