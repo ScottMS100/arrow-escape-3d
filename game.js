@@ -25,10 +25,10 @@ function params(mode, level) {
     };
   }
   if (mode === '3dout') {
-    // finer lattice: arrows sit PITCH (35%) closer together on the same-sized cube
+    // finer lattice: arrows sit PITCH (~51% of the original) apart on the same-sized cube
     const n = Math.round(Math.min(6 + Math.floor(level / 6), 12) / PITCH);
     return {
-      W: n, H: n, D: n, dens: Math.min(0.55 + level * 0.005, 0.7),
+      W: n, H: n, D: n, dens: Math.min(0.65 + level * 0.005, 0.8),
       maxLen: Math.round(Math.min(5 + Math.floor(level / 4), 14) / PITCH),
     };
   }
@@ -36,7 +36,7 @@ function params(mode, level) {
   return { W: n, H: n, D: n, dens: Math.min(0.45 + level * 0.005, 0.6), maxLen: Math.min(5 + Math.floor(level / 4), 12) };
 }
 
-const PITCH = 0.65; // outside mode: lattice spacing relative to the original
+const PITCH = 0.4875; // outside mode: lattice spacing relative to the original
 const SEEDS = { '2d': 1, '3d': 13, '3dout': 29 };
 
 // Arrows are placed one at a time; a new arrow's exit ray may not cross any
@@ -145,6 +145,10 @@ if (typeof document !== 'undefined') (function () {
 
   let mode = '2d', level = 1, G = null, owner = null;
   let lives = 3, over = false, hintId = -1, hintT = 0;
+  let selId = -1, selT = 0;            // double-tap mode: armed arrow and seconds left
+  const SEL_SECS = 4;
+  const settings = { doubleTap: false };
+  try { Object.assign(settings, JSON.parse(localStorage.getItem('ae_settings'))); } catch (e) { }
   let yaw = -0.7, pitch = 0.5;
   let faces = [], samples = [], solid = [], scale = 1, ox = 0, oy = 0, cw = 0, ch = 0;
   let baseScale = 1, zoom = 1, panX = 0, panY = 0;
@@ -178,7 +182,7 @@ if (typeof document !== 'undefined') (function () {
     G = generate(m, l);
     owner = new Map();
     for (const a of G.arrows) for (const c of a.path) owner.set(ck(...c), a.id);
-    lives = 3; over = false; hintId = -1; zoom = 1; panX = panY = 0;
+    lives = 3; over = false; hintId = -1; selId = -1; zoom = 1; panX = panY = 0;
     if (m === '2d') { yaw = 0; pitch = 0; } else { yaw = -0.7; pitch = 0.5; }
     $('menu').classList.add('hide'); $('overlay').classList.add('hide');
     $('title').textContent = { '2d': '2D', '3d': '3D Inside', '3dout': '3D Outside' }[m] + ' · Level ' + l;
@@ -311,6 +315,7 @@ if (typeof document !== 'undefined') (function () {
     }
     let hue = a.hue, sat = 70, light = 55;
     if (a.flash > 0) { hue = 0; sat = 85; light = 55; }
+    else if (a.id === selId) { sat = 40; light = 82 + 12 * Math.sin(performance.now() / 90); }
     else if (a.id === hintId) { sat = 90; light = 58 + 14 * Math.sin(performance.now() / 120); }
     const H = 0.03;
     if (mode === '3dout') drawFlat(a, clean, head, hue, sat, light);
@@ -407,6 +412,7 @@ if (typeof document !== 'undefined') (function () {
       }
     }
     if (hintId >= 0 && (hintT -= dt) <= 0) hintId = -1;
+    if (selId >= 0 && ((selT -= dt) <= 0 || G.arrows[selId].state !== 'idle')) selId = -1;
     if (!over && !anyMoving && G.arrows.every(a => a.state === 'gone')) {
       over = true;
       store.set(mode, level + 1);
@@ -434,6 +440,16 @@ if (typeof document !== 'undefined') (function () {
     }
     a.state = 'moving'; a.v = 5;
     if (hintId === id) hintId = -1;
+  }
+
+  // Double-tap mode: the first tap arms an arrow, a second tap on it within
+  // SEL_SECS launches it. Tapping another arrow re-arms; tapping empty space disarms.
+  function onTap(id) {
+    if (id < 0) { selId = -1; return; }
+    if (!settings.doubleTap) return tap(id);
+    if (id === selId && selT > 0) { selId = -1; return tap(id); }
+    if (over || G.arrows[id].state !== 'idle') { selId = -1; return; }
+    selId = id; selT = SEL_SECS;
   }
 
   function hint() {
@@ -517,7 +533,7 @@ if (typeof document !== 'undefined') (function () {
     if (canTap && down && !down.drag && G) {
       const [x, y] = rel(e);
       const id = pick(x, y);
-      if (id >= 0) tap(id);
+      onTap(id);
     }
     pointers.delete(e.pointerId);
     if (pointers.size < 2) pinch = null;
@@ -538,6 +554,11 @@ if (typeof document !== 'undefined') (function () {
   $('back').onclick = showMenu;
   $('restart').onclick = () => start(mode, level);
   $('hint').onclick = hint;
+  $('optDouble').checked = settings.doubleTap;
+  $('optDouble').onchange = e => {
+    settings.doubleTap = e.target.checked; selId = -1;
+    try { localStorage.setItem('ae_settings', JSON.stringify(settings)); } catch (err) { }
+  };
   window.addEventListener('resize', resize);
 
   let last = performance.now();
@@ -548,5 +569,5 @@ if (typeof document !== 'undefined') (function () {
   }
   showMenu(); resize();
   requestAnimationFrame(frame);
-  window.__game = { start, get G() { return G; }, tap, pick };
+  window.__game = { start, get G() { return G; }, tap, pick, onTap, get selId() { return selId; }, settings };
 })();
