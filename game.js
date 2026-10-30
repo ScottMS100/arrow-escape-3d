@@ -18,10 +18,10 @@ const ck = (x, y, z) => x + ',' + y + ',' + z;
 function params(mode, level) {
   if (mode === '2d') {
     return {
-      W: Math.min(7 + Math.floor(level / 2), 16),
-      H: Math.min(10 + Math.floor(level * 0.75), 24), D: 1,
-      dens: Math.min(0.74 + level * 0.01, 0.86),
-      maxLen: Math.min(6 + Math.floor(level / 3), 12),
+      W: Math.min(12 + level, 22),
+      H: Math.min(14 + level, 26), D: 1,
+      dens: 1,
+      maxLen: Math.min(10 + level, 24),
     };
   }
   if (mode === '3dout') {
@@ -39,12 +39,125 @@ function params(mode, level) {
 const PITCH = 0.4875; // outside mode: lattice spacing relative to the original
 const SEEDS = { '2d': 1, '3d': 13, '3dout': 29 };
 
+// 2D: cover the board with winding paths first, then give each a head end and
+// repair any circular blocking (flip the head, else drop the arrow) so that
+// the board is dense and still always solvable.
+function gen2d(P, R) {
+  const { W, H, maxLen } = P;
+  const own = new Array(W * H).fill(-1);
+  const D4 = DIRS.slice(0, 4);
+  const at = (x, y) => (x < 0 || y < 0 || x >= W || y >= H) ? -2 : own[y * W + x];
+  const free = (x, y) => at(x, y) === -1;
+  const deg = (x, y) => D4.filter(d => free(x + d[0], y + d[1])).length;
+  let arrows = [];
+  const claim = (path, id) => path.forEach(c => { own[c[1] * W + c[0]] = id; });
+
+  // cover every empty cell with winding paths (single cells stay empty)
+  function fill() {
+    const used = new Set();
+    for (;;) {
+      let best = null, bd = 9, n = 0;
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        if (!free(x, y) || used.has(y * W + x)) continue;
+        const d = deg(x, y);
+        if (d < bd) { bd = d; best = [x, y]; n = 1; } else if (d === bd && R() < 1 / ++n) best = [x, y];
+      }
+      if (!best) break;
+      const path = [best], id = arrows.length;
+      own[best[1] * W + best[0]] = id;
+      const len = 3 + Math.floor(R() * (maxLen - 2));
+      for (let end = 0; end < 2; end++) {
+        while (path.length < len) {
+          const h = end ? path[0] : path[path.length - 1];
+          const opts = D4.filter(d => free(h[0] + d[0], h[1] + d[1]));
+          if (!opts.length) break;
+          let d;
+          if (R() < 0.3) d = opts[Math.floor(R() * opts.length)];
+          else {
+            let m = 9, c = [];
+            for (const o of opts) { const k = deg(h[0] + o[0], h[1] + o[1]); if (k < m) { m = k; c = [o]; } else if (k === m) c.push(o); }
+            d = c[Math.floor(R() * c.length)];
+          }
+          const q = [h[0] + d[0], h[1] + d[1]];
+          own[q[1] * W + q[0]] = id;
+          if (end) path.unshift(q); else path.push(q);
+        }
+      }
+      if (path.length < 2) { own[best[1] * W + best[0]] = -1; used.add(best[1] * W + best[0]); continue; }
+      if (R() < 0.5) path.reverse();
+      arrows.push({ path });
+    }
+  }
+  const dirOf = p => { const a = p[p.length - 2], b = p[p.length - 1]; return [b[0] - a[0], b[1] - a[1], 0]; };
+  const rayOf = p => {
+    const d = dirOf(p), b = p[p.length - 1], ray = [];
+    let x = b[0] + d[0], y = b[1] + d[1];
+    while (x >= 0 && y >= 0 && x < W && y < H) { ray.push([x, y, 0]); x += d[0]; y += d[1]; }
+    return ray;
+  };
+
+  // peel off arrows that can leave; when only loops remain, flip a head or drop an arrow
+  function resolve() {
+    const alive = new Set(arrows.map((_, i) => i));
+    const blockers = path => {
+      const s = new Set();
+      for (const r of rayOf(path)) { const o = own[r[1] * W + r[0]]; if (o >= 0 && alive.has(o)) s.add(o); }
+      return s;
+    };
+    const order = [];
+    while (alive.size) {
+      let moved = true;
+      while (moved) {
+        moved = false;
+        for (const i of [...alive]) if (!blockers(arrows[i].path).size) { alive.delete(i); order.push(i); moved = true; }
+      }
+      if (!alive.size) break;
+      let cur = [...alive][Math.floor(R() * alive.size)];
+      const seen = [];
+      while (!seen.includes(cur)) { seen.push(cur); cur = [...blockers(arrows[cur].path)][0]; }
+      const cyc = seen.slice(seen.indexOf(cur));
+      const v = cyc[Math.floor(R() * cyc.length)];
+      const a = arrows[v], rev = a.path.slice().reverse();
+      if (blockers(rev).size < blockers(a.path).size) a.path = rev;
+      else { alive.delete(v); claim(a.path, -1); a.dead = true; }
+    }
+    return order;
+  }
+
+  let order;
+  fill();
+  for (let pass = 0; pass < 6; pass++) {
+    order = resolve();
+    // drop dead arrows, renumber, and try to cover the holes they left
+    arrows = order.map(i => arrows[i]);
+    arrows.forEach((a, i) => claim(a.path, i));
+    order = arrows.map((_, i) => i);
+    if (pass < 5) fill();
+  }
+
+  const res = [];
+  order.forEach(i => {
+    const a = arrows[i];
+    const L = a.path.length, d = dirOf(a.path), ray = rayOf(a.path);
+    const ext = a.path.map(c => [c[0], c[1], 0]).concat(ray);
+    let e = ray.length ? ray[ray.length - 1] : [a.path[L - 1][0], a.path[L - 1][1], 0];
+    for (let k = 0; k < L + 2; k++) { e = [e[0] + d[0], e[1] + d[1], 0]; ext.push(e); }
+    res.push({
+      path: a.path.map(c => [c[0], c[1], 0]), dir: d, ray, ext, L,
+      state: 'idle', s: 0, v: 5, bump: -1, flash: 0,
+    });
+  });
+  res.reverse().forEach((a, i) => { a.id = i; a.hue = (i * 47 + 190) % 360; });
+  return { P, arrows: res };
+}
+
 // Arrows are placed one at a time; a new arrow's exit ray may not cross any
 // earlier arrow. Removing them in reverse placement order is then always
 // possible, so every level is solvable.
 function generate(mode, level) {
   const P = params(mode, level);
   const R = rng(level * 7919 + SEEDS[mode]);
+  if (mode === '2d') return gen2d(P, R);
   const { W, H, D } = P;
   const occ = new Set();
   const inb = (x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < W && y < H && z < D;
