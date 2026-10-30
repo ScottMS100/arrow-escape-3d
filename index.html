@@ -51,6 +51,7 @@
 <div id="menu" class="screen">
   <h1>Arrow Escape 3D</h1>
   <p>Tap an arrow to slide it out the way it points. If another arrow is in its path it bumps and you lose a heart. Clear the board.</p>
+  <button id="resume" class="primary hide" style="padding:16px;font-size:1.1rem;width:min(320px,100%)">▶ Resume game</button>
   <div class="modes">
     <button id="play2d" class="primary"><span>2D Classic</span><small id="lv2d"></small></button>
     <button id="play3d" class="primary"><span>3D Cube Inside</span><small id="lv3d"></small></button>
@@ -66,7 +67,7 @@
   <button id="msgBtn" class="primary"></button>
 </div>
 
-<script src="game.js?v=20"></script>
+<script src="game.js?v=21"></script>
 <script>
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>

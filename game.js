@@ -660,8 +660,11 @@ if (typeof document !== 'undefined') (function () {
     const p = store.get();
     $('lv2d').textContent = 'Level ' + p['2d']; $('lv3d').textContent = 'Level ' + p['3d'];
     $('lv3dout').textContent = 'Level ' + p['3dout'];
+    $('resume').classList.toggle('hide', !G || over);
+    $('resume').textContent = G ? '▶ Resume ' + $('title').textContent : '';
     $('menu').classList.remove('hide'); $('overlay').classList.add('hide');
   }
+  $('resume').onclick = () => $('menu').classList.add('hide');
   $('play2d').onclick = () => start('2d', store.get()['2d']);
   $('play3d').onclick = () => start('3d', store.get()['3d']);
   $('play3dout').onclick = () => start('3dout', store.get()['3dout']);
