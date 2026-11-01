@@ -815,6 +815,8 @@ if (typeof document !== 'undefined') (function () {
     $('menu').classList.remove('hide'); $('overlay').classList.add('hide');
   }
   $('resume').onclick = () => $('menu').classList.add('hide');
+  $('howto').onclick = () => { $('help').scrollTop = 0; $('help').classList.remove('hide'); };
+  $('helpClose').onclick = () => $('help').classList.add('hide');
   $('play2d').onclick = () => start('2d', store.get()['2d']);
   $('play3d').onclick = () => start('3d', store.get()['3d']);
   $('play3dout').onclick = () => start('3dout', store.get()['3dout']);

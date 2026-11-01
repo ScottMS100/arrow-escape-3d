@@ -33,6 +33,13 @@
     background:#1a2133; border-radius:10px; padding:12px 14px; text-align:left; cursor:pointer; }
   .opt input { width:20px; height:20px; accent-color:var(--accent); }
   .opt small { flex-basis:100%; color:var(--mut); font-size:.8rem; }
+  #help { justify-content:flex-start; overflow-y:auto; }
+  #help .inner { width:min(520px,100%); text-align:left; display:flex; flex-direction:column; gap:12px; padding:8px 0 24px; }
+  #help h1 { text-align:center; }
+  #help h2 { margin:8px 0 0; font-size:1.05rem; color:var(--accent); }
+  #help p, #help li { color:var(--fg); max-width:none; }
+  #help ul { margin:0; padding-left:1.2em; line-height:1.5; }
+  #help li { margin-bottom:4px; }
   .modes small { color:inherit; opacity:.7; }
 </style>
 </head>
@@ -57,8 +64,42 @@
     <button id="play3d" class="primary"><span>3D Cube Inside</span><small id="lv3d"></small></button>
     <button id="play3dout" class="primary"><span>3D Shapes Outside</span><small id="lv3dout"></small></button>
   </div>
+  <button id="howto" style="width:min(320px,100%)">How to play</button>
   <label class="opt"><input type="checkbox" id="optDouble"> Double-tap to launch<small>Tap an arrow to highlight it, tap it again within 4 seconds to send it. Handy on a phone.</small></label>
   <p><b>Inside</b>: a see-through cube of 3D arrows. <b>Outside</b>: a solid shape (cube, steps, castle and more, a new one each level) with flat arrows on its surface. Drag to rotate, scroll or pinch to zoom, tap an arrow to launch it.</p>
+</div>
+
+<div id="help" class="screen hide">
+  <div class="inner">
+    <h1>How to play</h1>
+    <p>Every arrow can slide out of the board in the direction it points. Clear the whole board to win the level.</p>
+    <h2>The rules</h2>
+    <ul>
+      <li><b>Tap an arrow</b> to send it. It slides along the way its head points and off the board.</li>
+      <li>If another arrow is in its path it <b>bumps</b> and you lose a heart. You have 3 hearts per level; run out and you retry the level.</li>
+      <li>So work out which arrows have a clear path first, and clear those to open up the rest.</li>
+      <li>Levels are always solvable, and they get bigger and harder as you go. Your progress is saved on this device.</li>
+    </ul>
+    <h2>Buttons</h2>
+    <ul>
+      <li><b>💡 Hint</b> highlights an arrow that can leave right now.</li>
+      <li><b>↻ Restart</b> starts the level over with full hearts.</li>
+      <li><b>☰ Menu</b> opens this menu. Use <b>Resume</b> to go back to your game.</li>
+    </ul>
+    <h2>The three modes</h2>
+    <ul>
+      <li><b>2D Classic</b>: a flat board packed with winding arrows. Zoom in to tap small arrows.</li>
+      <li><b>3D Cube Inside</b>: a see-through block of 3D arrows. Rotate it to see arrows hiding behind others.</li>
+      <li><b>3D Shapes Outside</b>: a solid shape (a new one each level) with flat arrows on its surface. Arrows can bend over edges and slide off the edge they point at.</li>
+    </ul>
+    <h2>Moving around</h2>
+    <ul>
+      <li><b>Rotate</b> (3D modes): drag with a finger or the mouse, in any direction.</li>
+      <li><b>Zoom</b>: pinch on a phone, or use the scroll wheel on a computer.</li>
+      <li><b>Double-tap to launch</b> (menu option): the first tap highlights an arrow and a second tap within 4 seconds sends it. This stops accidental launches on a phone.</li>
+    </ul>
+    <button id="helpClose" class="primary" style="padding:14px;font-size:1.05rem">Got it</button>
+  </div>
 </div>
 
 <div id="overlay" class="screen hide">
@@ -67,7 +108,7 @@
   <button id="msgBtn" class="primary"></button>
 </div>
 
-<script src="game.js?v=26"></script>
+<script src="game.js?v=27"></script>
 <script>
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
