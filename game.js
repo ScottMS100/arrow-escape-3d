@@ -336,10 +336,12 @@ if (typeof module !== 'undefined') module.exports = { generate, params, ck, PITC
 
 if (typeof document !== 'undefined') (function () {
   const $ = id => document.getElementById(id);
-  const canvas = $('c'), ctx = canvas.getContext('2d');
+  // Desktop browsers on integrated graphics rasterise thousands of small polygons faster on the CPU
+  // than through the GPU canvas path, so ask for a software canvas where there is a mouse.
+  const canvas = $('c'), ctx = canvas.getContext('2d', { willReadFrequently: !!(window.matchMedia && matchMedia('(pointer: fine)').matches) });
   const LIGHT = (() => { const v = [-0.35, 0.65, 0.7], l = Math.hypot(...v); return v.map(x => x / l); })();
 
-  let mode = '2d', level = 1, G = null, owner = null;
+  let mode = '2d', level = 1, G = null, owner = null, gen = 0;
   let lives = 3, over = false, hintId = -1, hintT = 0;
   let selId = -1, selT = 0;            // double-tap mode: armed arrow and seconds left
   const SEL_SECS = 4;
@@ -359,7 +361,7 @@ if (typeof document !== 'undefined') (function () {
   };
 
   function resize() {
-    const r = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    const r = canvas.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
     cw = r.width; ch = r.height;
     canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -374,7 +376,7 @@ if (typeof document !== 'undefined') (function () {
   }
 
   function start(m, l) {
-    mode = m; level = l;
+    mode = m; level = l; gen++;
     G = generate(m, l);
     if (m === '3dout') Object.assign(G, buildBlocks(G.P.shape));
     owner = new Map();
@@ -827,9 +829,15 @@ if (typeof document !== 'undefined') (function () {
   window.addEventListener('resize', resize);
 
   let last = performance.now();
+  let lastSig = '', wasBusy = false;
   function frame(t) {
     const dt = Math.min(0.05, (t - last) / 1000); last = t;
-    update(dt); render();
+    update(dt);
+    // only redraw when the view changed or something is animating (saves CPU/GPU when idle)
+    const busy = !!G && (hintId >= 0 || selId >= 0 || G.arrows.some(a => a.state === 'moving' || a.bump >= 0 || a.flash > 0));
+    const sig = [gen, mode, yaw, pitch, zoom, panX, panY, cw, ch].join();
+    if (busy || wasBusy || sig !== lastSig || !G) { render(); lastSig = sig; }
+    wasBusy = busy;
     requestAnimationFrame(frame);
   }
   showMenu(); resize();
