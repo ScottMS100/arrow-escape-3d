@@ -19,7 +19,7 @@ const ck = (x, y, z) => x + ',' + y + ',' + z;
 const CUSTOM = {
   '2d': { W: [12, 18, 26], H: [14, 22, 32], maxLen: [10, 16, 24], dens: [0.5, 0.75, 1] },
   '3d': { n: [5, 8, 12], maxLen: [6, 10, 16], dens: [0.4, 0.6, 0.8] },
-  '3dout': { base: [7, 11, 18], len: [24, 14, 9], dens: [0.5, 0.75, 1] }, // len: longest arrow in cells, by density
+  '3dout': { base: [7, 11, 18], len: [24, 14, 6], dens: [0.5, 0.75, 1] }, // len: longest arrow in cells, by density
 };
 
 function params(mode, level, c) {
@@ -848,7 +848,7 @@ if (typeof document !== 'undefined') (function () {
     if (selId >= 0 && ((selT -= dt) <= 0 || G.arrows[selId].state !== 'idle')) selId = -1;
     if (!over && !anyMoving && G.arrows.every(a => a.state === 'gone')) {
       over = true;
-      if (custom) showMsg('Board cleared!', 'Nice work.', 'New board', () => start(mode, level, newCustom(custom)));
+      if (custom) showMsg('Board cleared!', 'Nice work.', 'New board', () => buildCustom(mode, newCustom(custom)));
       else {
         store.set(mode, level + 1);
         showMsg('Level cleared!', 'Nice work.', 'Next level', () => start(mode, level + 1));
@@ -990,6 +990,16 @@ if (typeof document !== 'undefined') (function () {
   $('msgMenu').onclick = showMenu;
   // ---- custom game: pick mode, size, density (and shape for Exterior) ----
   const newCustom = c => ({ ...c, seed: (Math.random() * 1e9) | 0 });
+  // big boards take a few seconds to build, so say so first
+  function buildCustom(m, c) {
+    $('msgTitle').textContent = 'Building board…'; $('msgSub').textContent = 'Large boards can take a few seconds.';
+    $('msgBtn').style.display = $('msgMenu').style.display = 'none';
+    $('overlay').classList.remove('hide');
+    setTimeout(() => {
+      start(m, 1, c);
+      $('msgBtn').style.display = $('msgMenu').style.display = '';
+    }, 50);
+  }
   let cust = { mode: '3dout', size: 1, dens: 1, shape: 0 };
   try { Object.assign(cust, JSON.parse(localStorage.getItem('ae_custom'))); } catch (e) { }
   for (const s of SHAPES) $('cShape').add(new Option(s.name, SHAPES.indexOf(s)));
@@ -1007,7 +1017,7 @@ if (typeof document !== 'undefined') (function () {
   syncCustom();
   $('customBtn').onclick = () => { syncCustom(); $('custom').classList.remove('hide'); };
   $('cBack').onclick = () => $('custom').classList.add('hide');
-  $('cStart').onclick = () => { $('custom').classList.add('hide'); start(cust.mode, 1, newCustom(cust)); };
+  $('cStart').onclick = () => { $('custom').classList.add('hide'); buildCustom(cust.mode, newCustom(cust)); };
   $('resume').onclick = () => $('menu').classList.add('hide');
   $('howto').onclick = () => { $('help').scrollTop = 0; $('help').classList.remove('hide'); };
   $('helpClose').onclick = () => $('help').classList.add('hide');
