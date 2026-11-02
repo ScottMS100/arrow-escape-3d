@@ -19,7 +19,7 @@ const ck = (x, y, z) => x + ',' + y + ',' + z;
 const CUSTOM = {
   '2d': { W: [12, 18, 26], H: [14, 22, 32], maxLen: [10, 16, 24], dens: [0.5, 0.75, 1] },
   '3d': { n: [5, 8, 12], maxLen: [6, 10, 16], dens: [0.4, 0.6, 0.8] },
-  '3dout': { base: [7, 11, 18], len: [24, 14, 9], dens: [0.5, 0.75, 0.95] }, // len: longest arrow in cells, by density
+  '3dout': { base: [7, 11, 18], len: [24, 14, 9], dens: [0.5, 0.75, 1] }, // len: longest arrow in cells, by density
 };
 
 function params(mode, level, c) {
@@ -274,6 +274,7 @@ function generate(mode, level, c) {
     }
   }
   const dirs = mode === '2d' ? DIRS.slice(0, 4) : DIRS;
+  if (c && out) return genOutPacked();
   const target = Math.floor((out ? surf.length : W * H * D) * P.dens);
   // Harder levels compare more candidates per arrow and keep the one that
   // blocks the most earlier arrows' exits, which builds deeper dependency chains.
@@ -340,6 +341,109 @@ function generate(mode, level, c) {
     place(best);
   }
   return { P, arrows };
+
+  // Custom Exterior boards: cover the whole surface with winding paths, then peel off the
+  // arrows that can leave and fix any loops left (flip a head, else drop an arrow), as in gen2d.
+  function genOutPacked() {
+    const idx = q => (q[0] * H + q[1]) * D + q[2];
+    const own = new Int32Array(W * H * D).fill(-1);
+    let list = [];
+    const claim = (path, id) => path.forEach(q => { own[idx(q)] = id; });
+    const nbrs = p => {
+      const r = [];
+      for (const d of DIRS) if (stepCode(sh, p, d) > 0) { const q = [p[0] + d[0], p[1] + d[1], p[2] + d[2]]; if (own[idx(q)] === -1) r.push(q); }
+      return r;
+    };
+    const rayOf = path => {
+      const a = path[path.length - 2], b = path[path.length - 1];
+      const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+      return { d, ray: rayOut(b, d, stepCode(sh, a, d), new Set(path.map(q => ck(...q)))) };
+    };
+
+    function fill() {
+      const used = new Set(), order = surf.slice();
+      for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+      for (let thr = 1; thr <= 6; thr++) for (const q of order) {
+        const i = idx(q);
+        if (own[i] !== -1 || used.has(i) || nbrs(q).length > thr) continue;
+        const path = [q], id = list.length, len = 3 + Math.floor(R() * (P.maxLen - 2));
+        own[i] = id;
+        for (let end = 0; end < 2; end++) {
+          while (path.length < len) {
+            const h = end ? path[0] : path[path.length - 1], opts = nbrs(h);
+            if (!opts.length) break;
+            let nx;
+            if (R() < 0.3) nx = opts[Math.floor(R() * opts.length)];
+            else {
+              let m = 9, cs = [];
+              for (const o of opts) { const k = nbrs(o).length; if (k < m) { m = k; cs = [o]; } else if (k === m) cs.push(o); }
+              nx = cs[Math.floor(R() * cs.length)];
+            }
+            own[idx(nx)] = id;
+            if (end) path.unshift(nx); else path.push(nx);
+          }
+        }
+        // an arrow never starts or ends on an edge
+        while (path.length && ptKind(sh, path[0]) === 2) own[idx(path.shift())] = -1;
+        while (path.length && ptKind(sh, path[path.length - 1]) === 2) own[idx(path.pop())] = -1;
+        if (path.length < 2) { claim(path, -1); used.add(i); continue; }
+        if (R() < 0.5) path.reverse();
+        list.push({ path });
+      }
+    }
+
+    function resolve() {
+      const alive = new Set();
+      list.forEach((a, i) => {
+        let r = rayOf(a.path);
+        if (!r.ray) { a.path.reverse(); r = rayOf(a.path); }
+        if (!r.ray) { claim(a.path, -1); return; }
+        a.ray = r.ray; alive.add(i);
+      });
+      const blockers = ray => {
+        const b = new Set();
+        for (const q of ray) { const o = own[idx(q)]; if (o >= 0 && alive.has(o)) b.add(o); }
+        return b;
+      };
+      const order = [];
+      while (alive.size) {
+        let moved = true;
+        while (moved) {
+          moved = false;
+          for (const i of [...alive]) if (!blockers(list[i].ray).size) { alive.delete(i); order.push(i); moved = true; }
+        }
+        if (!alive.size) break;
+        let cur = [...alive][Math.floor(R() * alive.size)];
+        const seen = [];
+        while (!seen.includes(cur)) { seen.push(cur); cur = [...blockers(list[cur].ray)][0]; }
+        const cyc = seen.slice(seen.indexOf(cur)), v = cyc[Math.floor(R() * cyc.length)], a = list[v];
+        const rev = a.path.slice().reverse(), r = rayOf(rev);
+        if (r.ray && blockers(r.ray).size < blockers(a.ray).size) { a.path = rev; a.ray = r.ray; }
+        else { alive.delete(v); claim(a.path, -1); }
+      }
+      return order;
+    }
+
+    let order;
+    fill();
+    for (let pass = 0; pass < 5; pass++) {
+      order = resolve();
+      list = order.map(i => list[i]);
+      list.forEach((a, i) => claim(a.path, i));
+      order = list.map((_, i) => i);
+      if (pass < 4) fill();
+    }
+    if (P.dens < 1) order = order.filter(() => R() < P.dens);
+    const res = order.map(i => {
+      const a = list[i], r = rayOf(a.path), L = a.path.length, d = r.d, ray = r.ray;
+      const ext = a.path.concat(ray);
+      let e = ray.length ? ray[ray.length - 1] : a.path[L - 1];
+      for (let k = 0; k < L + 2; k++) { e = [e[0] + d[0], e[1] + d[1], e[2] + d[2]]; ext.push(e); }
+      return { path: a.path, dir: d, ray, ext, L, state: 'idle', s: 0, v: 5, bump: -1, flash: 0 };
+    });
+    res.reverse().forEach((a, i) => { a.id = i; a.hue = (i * 47 + 190) % 360; });
+    return { P, arrows: res };
+  }
 
   function place({ cand, ray, d }) {
     const L = cand.length, b = cand[L - 1];
