@@ -345,7 +345,7 @@ if (typeof document !== 'undefined') (function () {
   let lives = 3, over = false, hintId = -1, hintT = 0;
   let selId = -1, selT = 0;            // double-tap mode: armed arrow and seconds left
   const SEL_SECS = 4;
-  const settings = { doubleTap: false };
+  const settings = { doubleTap: false, unlimited: false };
   try { Object.assign(settings, JSON.parse(localStorage.getItem('ae_settings'))); } catch (e) { }
   let yaw = -0.7, pitch = 0.5;
   let faces = [], samples = [], solid = [], buckets = null, curRank = -1, scale = 1, ox = 0, oy = 0, cw = 0, ch = 0;
@@ -408,7 +408,7 @@ if (typeof document !== 'undefined') (function () {
     return { blocks, bmap };
   }
 
-  function updateHud() { $('lives').textContent = '♥'.repeat(lives) + '♡'.repeat(3 - lives); }
+  function updateHud() { $('lives').textContent = settings.unlimited ? '♥ ∞' : '♥'.repeat(lives) + '♡'.repeat(3 - lives); }
 
   function showMsg(title, sub, btn, fn) {
     $('msgTitle').textContent = title; $('msgSub').textContent = sub;
@@ -696,7 +696,7 @@ if (typeof document !== 'undefined') (function () {
     if (hard || soft) {
       a.bump = 0;
       if (hard) {
-        a.flash = 0.4; lives--; updateHud();
+        a.flash = 0.4; if (!settings.unlimited) lives--; updateHud();
         if (lives <= 0) { over = true; showMsg('Out of lives', 'Give it another go.', 'Retry', () => start(mode, level)); }
       }
       return;
@@ -824,11 +824,20 @@ if (typeof document !== 'undefined') (function () {
   $('back').onclick = showMenu;
   $('restart').onclick = () => start(mode, level);
   $('hint').onclick = hint;
-  $('optDouble').checked = settings.doubleTap;
-  $('optDouble').onchange = e => {
-    settings.doubleTap = e.target.checked; selId = -1;
+  const saveSettings = () => {
     try { localStorage.setItem('ae_settings', JSON.stringify(settings)); } catch (err) { }
   };
+  // unlimited lives turns double-tap off and locks it
+  const syncOpts = () => {
+    if (settings.unlimited) settings.doubleTap = false;
+    $('optDouble').checked = settings.doubleTap; $('optDouble').disabled = settings.unlimited;
+    $('optUnlimited').checked = settings.unlimited;
+    $('optDouble').parentNode.style.opacity = settings.unlimited ? 0.5 : 1;
+    selId = -1; updateHud();
+  };
+  $('optDouble').onchange = e => { settings.doubleTap = e.target.checked; syncOpts(); saveSettings(); };
+  $('optUnlimited').onchange = e => { settings.unlimited = e.target.checked; syncOpts(); saveSettings(); };
+  syncOpts();
   window.addEventListener('resize', resize);
 
   let last = performance.now();

@@ -65,6 +65,7 @@
     <button id="play3dout" class="primary"><span>3D Shapes Exterior</span><small id="lv3dout"></small></button>
   </div>
   <button id="howto" style="width:min(320px,100%)">How to play</button>
+  <label class="opt"><input type="checkbox" id="optUnlimited"> Unlimited lives<small>Bumping never costs a heart. Turns off double-tap to launch.</small></label>
   <label class="opt"><input type="checkbox" id="optDouble"> Double-tap to launch<small>Tap an arrow to highlight it, tap it again within 4 seconds to send it. Handy on a phone.</small></label>
   <p><b>Interior</b>: a see-through cube of 3D arrows. <b>Exterior</b>: a solid shape (cube, steps, castle and more, a new one each level) with flat arrows on its surface. Drag to rotate, scroll or pinch to zoom, tap an arrow to launch it.</p>
 </div>
@@ -96,6 +97,7 @@
     <ul>
       <li><b>Rotate</b> (3D modes): drag with a finger or the mouse, in any direction.</li>
       <li><b>Zoom</b>: pinch on a phone, or use the scroll wheel on a computer.</li>
+      <li><b>Unlimited lives</b> (menu option): bumps never cost a heart, so you can't fail a level. It switches double-tap off.</li>
       <li><b>Double-tap to launch</b> (menu option): the first tap highlights an arrow and a second tap within 4 seconds sends it. This stops accidental launches on a phone.</li>
     </ul>
     <button id="helpClose" class="primary" style="padding:14px;font-size:1.05rem">Got it</button>
@@ -109,7 +111,7 @@
   <button id="msgMenu">Main menu</button>
 </div>
 
-<script src="game.js?v=29"></script>
+<script src="game.js?v=30"></script>
 <script>
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
