@@ -360,9 +360,9 @@ function generate(mode, level, c) {
       return { d, ray: rayOut(b, d, stepCode(sh, a, d), new Set(path.map(q => ck(...q)))) };
     };
 
-    const blockersOf = ray => {
+    const blockersOf = (ray, self) => {
       const b = new Set();
-      for (const q of ray) { const o = own[idx(q)]; if (o >= 0) b.add(o); }
+      for (const q of ray) { const o = own[idx(q)]; if (o >= 0 && o !== self) b.add(o); }
       return b;
     };
     // does any arrow in `from` (through the arrows blocking it, and so on) depend on arrow `target`?
@@ -453,23 +453,47 @@ function generate(mode, level, c) {
       if (pass < 4) fill();
     }
     // make it harder: turn arrows round to run into more others wherever that cannot make a loop
-    const deps = depsRef = list.map(a => blockersOf(a.ray));
+    const deps = depsRef = list.map((a, i) => blockersOf(a.ray, i));
     for (let sweep = 0; sweep < 3; sweep++) {
       const ids = list.map((_, i) => i);
       for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
       for (const i of ids) {
         const a = list[i], rev = a.path.slice().reverse(), r = rayOf(rev);
         if (!r.ray) continue;
-        const nd = blockersOf(r.ray);
+        const nd = blockersOf(r.ray, i);
         if (nd.size <= deps[i].size || reaches(nd, i)) continue;
         a.path = rev; a.ray = r.ray; deps[i] = nd;
       }
+      // an arrow that can still leave at once may lose a cell or two off either end (or turn round
+      // after that) so that it points into the others instead; it never starts or ends on an edge
+      for (const i of ids) {
+        if (deps[i].size) continue;
+        const a = list[i];
+        let best = null;
+        for (let lo = 0; lo <= 2; lo++) for (let hi = 0; hi <= 2; hi++) {
+          if (!lo && !hi) continue;
+          const p = a.path.slice(lo, a.path.length - hi);
+          if (p.length < 2 || ptKind(sh, p[0]) === 2 || ptKind(sh, p[p.length - 1]) === 2) continue;
+          for (const q of [p, p.slice().reverse()]) {
+            const r = rayOf(q);
+            if (!r.ray) continue;
+            const nd = blockersOf(r.ray, i);
+            if (nd.size && (!best || nd.size > best.nd.size) && !reaches(nd, i)) best = { q, ray: r.ray, nd };
+          }
+        }
+        if (!best) continue;
+        const keep = new Set(best.q.map(x => idx(x)));
+        for (const x of a.path) if (!keep.has(idx(x))) own[idx(x)] = -1;
+        a.path = best.q; a.ray = best.ray; deps[i] = best.nd;
+      }
     }
+    for (let i = 0; i < list.length; i++) deps[i] = blockersOf(list[i].ray, i);
     // removal order: repeatedly take every arrow whose blockers are already gone
     const left = new Set(list.map((_, i) => i));
     order = [];
     while (left.size) {
       const now = [...left].filter(i => [...deps[i]].every(j => !left.has(j)));
+      if (!now.length) break;
       now.forEach(i => { left.delete(i); order.push(i); });
     }
     if (P.dens < 1) order = order.filter(() => R() < P.dens);
