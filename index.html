@@ -40,6 +40,12 @@
   #help p, #help li { color:var(--fg); max-width:none; }
   #help ul { margin:0; padding-left:1.2em; line-height:1.5; }
   #help li { margin-bottom:4px; }
+  #menu { justify-content:flex-start; overflow-y:auto; }
+  #menu > :first-child { margin-top:auto; }
+  #menu > :last-child { margin-bottom:auto; }
+  .field { display:flex; align-items:center; justify-content:space-between; gap:12px; width:min(320px,100%);
+    background:#1a2133; border-radius:10px; padding:10px 14px; }
+  select { font:inherit; color:var(--fg); background:#27314a; border:0; border-radius:8px; padding:8px 10px; }
   .modes small { color:inherit; opacity:.7; }
 </style>
 </head>
@@ -64,10 +70,22 @@
     <button id="play3d" class="primary"><span>3D Cube Interior</span><small id="lv3d"></small></button>
     <button id="play3dout" class="primary"><span>3D Shapes Exterior</span><small id="lv3dout"></small></button>
   </div>
+  <button id="customBtn" style="width:min(320px,100%)">Custom game (size &amp; density)</button>
   <button id="howto" style="width:min(320px,100%)">How to play</button>
   <label class="opt"><input type="checkbox" id="optUnlimited"> Unlimited lives<small>Bumping never costs a heart. Turns off double-tap to launch.</small></label>
   <label class="opt"><input type="checkbox" id="optDouble"> Double-tap to launch<small>Tap an arrow to highlight it, tap it again within 4 seconds to send it. Handy on a phone.</small></label>
   <p><b>Interior</b>: a see-through cube of 3D arrows. <b>Exterior</b>: a solid shape (cube, steps, castle and more, a new one each level) with flat arrows on its surface. Drag to rotate, scroll or pinch to zoom, tap an arrow to launch it.</p>
+</div>
+
+<div id="custom" class="screen hide">
+  <h1>Custom game</h1>
+  <p>Pick the kind of board you want. It doesn't affect your level progress.</p>
+  <label class="field">Mode <select id="cMode"><option value="2d">2D Classic</option><option value="3d">3D Cube Interior</option><option value="3dout">3D Shapes Exterior</option></select></label>
+  <label class="field">Size <select id="cSize"><option value="0">Small</option><option value="1">Medium</option><option value="2">Large</option></select></label>
+  <label class="field">Arrow density <select id="cDens"><option value="0">Low</option><option value="1">Medium</option><option value="2">High</option></select></label>
+  <label class="field" id="cShapeRow">Shape <select id="cShape"></select></label>
+  <button id="cStart" class="primary" style="padding:14px;font-size:1.05rem;width:min(320px,100%)">Start</button>
+  <button id="cBack" style="width:min(320px,100%)">Back</button>
 </div>
 
 <div id="help" class="screen hide">
@@ -97,6 +115,7 @@
     <ul>
       <li><b>Rotate</b> (3D modes): drag with a finger or the mouse, in any direction.</li>
       <li><b>Zoom</b>: pinch on a phone, or use the scroll wheel on a computer.</li>
+      <li><b>Custom game</b> (menu button): choose a small, medium or large board with low, medium or high arrow density. In Exterior mode you can also pick the shape. It doesn't change your level progress.</li>
       <li><b>Unlimited lives</b> (menu option): bumps never cost a heart, so you can't fail a level. It switches double-tap off.</li>
       <li><b>Double-tap to launch</b> (menu option): the first tap highlights an arrow and a second tap within 4 seconds sends it. This stops accidental launches on a phone.</li>
     </ul>
@@ -111,7 +130,7 @@
   <button id="msgMenu">Main menu</button>
 </div>
 
-<script src="game.js?v=30"></script>
+<script src="game.js?v=31"></script>
 <script>
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>

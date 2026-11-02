@@ -15,7 +15,27 @@ function rng(seed) {
 
 const ck = (x, y, z) => x + ',' + y + ',' + z;
 
-function params(mode, level) {
+// custom game choices: size and arrow density, each 0 = low/small .. 2 = high/large
+const CUSTOM = {
+  '2d': { W: [12, 18, 26], H: [14, 22, 32], maxLen: [10, 16, 24], dens: [0.5, 0.75, 1] },
+  '3d': { n: [5, 8, 12], maxLen: [6, 10, 16], dens: [0.4, 0.6, 0.8] },
+  '3dout': { base: [6, 9, 13], maxLen: [6, 10, 14], dens: [0.4, 0.6, 0.8] },
+};
+
+function params(mode, level, c) {
+  if (c) {
+    const t = CUSTOM[mode];
+    if (mode === '2d') return { W: t.W[c.size], H: t.H[c.size], D: 1, dens: t.dens[c.dens], maxLen: t.maxLen[c.size] };
+    if (mode === '3d') { const n = t.n[c.size]; return { W: n, H: n, D: n, dens: t.dens[c.dens], maxLen: t.maxLen[c.size] }; }
+    const def = SHAPES[c.shape >= 0 ? c.shape : Math.floor(rng(c.seed + 5)() * SHAPES.length)];
+    const E = Math.round(t.base[c.size] / PITCH) - 1;
+    const T = Math.max(3, Math.round(E / Math.max(...def.boxes.flatMap(b => b.slice(3)))));
+    const shape = makeShape(def, T);
+    return {
+      W: shape.E[0] + 1, H: shape.E[1] + 1, D: shape.E[2] + 1, shape,
+      dens: t.dens[c.dens], maxLen: Math.round(t.maxLen[c.size] / PITCH),
+    };
+  }
   if (mode === '2d') {
     return {
       W: Math.min(12 + level, 22),
@@ -197,6 +217,8 @@ function gen2d(P, R) {
     if (pass < 5) fill();
   }
 
+  // lower density: removing arrows never blocks the rest
+  if (P.dens < 1) order = order.filter(() => R() < P.dens);
   const res = [];
   order.forEach(i => {
     const a = arrows[i];
@@ -216,9 +238,9 @@ function gen2d(P, R) {
 // Arrows are placed one at a time; a new arrow's exit ray may not cross any
 // earlier arrow. Removing them in reverse placement order is then always
 // possible, so every level is solvable.
-function generate(mode, level) {
-  const P = params(mode, level);
-  const R = rng(level * 7919 + SEEDS[mode]);
+function generate(mode, level, c) {
+  const P = params(mode, level, c);
+  const R = rng(c ? c.seed : level * 7919 + SEEDS[mode]);
   if (mode === '2d') return gen2d(P, R);
   const { W, H, D } = P;
   const occ = new Set();
@@ -341,7 +363,7 @@ if (typeof document !== 'undefined') (function () {
   const canvas = $('c'), ctx = canvas.getContext('2d', { willReadFrequently: !!(window.matchMedia && matchMedia('(pointer: fine)').matches) });
   const LIGHT = (() => { const v = [-0.35, 0.65, 0.7], l = Math.hypot(...v); return v.map(x => x / l); })();
 
-  let mode = '2d', level = 1, G = null, owner = null, gen = 0;
+  let mode = '2d', level = 1, custom = null, G = null, owner = null, gen = 0;
   let lives = 3, over = false, hintId = -1, hintT = 0;
   let selId = -1, selT = 0;            // double-tap mode: armed arrow and seconds left
   const SEL_SECS = 4;
@@ -375,16 +397,17 @@ if (typeof document !== 'undefined') (function () {
     else baseScale = Math.min(cw, ch) / (Math.hypot(W, H, D) + 0.8);
   }
 
-  function start(m, l) {
-    mode = m; level = l; gen++;
-    G = generate(m, l);
+  const SIZES = ['Small', 'Medium', 'Large'], DENS = ['Low density', 'Medium density', 'High density'];
+  function start(m, l, c) {
+    mode = m; level = l; gen++; custom = c || null;
+    G = generate(m, l, custom);
     if (m === '3dout') Object.assign(G, buildBlocks(G.P.shape));
     owner = new Map();
     for (const a of G.arrows) for (const c of a.path) owner.set(ck(...c), a.id);
     lives = 3; over = false; hintId = -1; selId = -1; zoom = 1; panX = panY = 0;
     if (m === '2d') { yaw = 0; pitch = 0; } else { yaw = -0.7; pitch = 0.5; }
     $('menu').classList.add('hide'); $('overlay').classList.add('hide');
-    $('title').textContent = { '2d': '2D', '3d': '3D Interior', '3dout': '3D Exterior' }[m] + ' · Level ' + l + (m === '3dout' ? ' · ' + G.P.shape.name : '');
+    $('title').textContent = { '2d': '2D', '3d': '3D Interior', '3dout': '3D Exterior' }[m] + (custom ? ' · ' + SIZES[custom.size] + ' · ' + DENS[custom.dens] : ' · Level ' + l) + (m === '3dout' ? ' · ' + G.P.shape.name : '');
     updateHud(); resize();
   }
 
@@ -678,8 +701,11 @@ if (typeof document !== 'undefined') (function () {
     if (selId >= 0 && ((selT -= dt) <= 0 || G.arrows[selId].state !== 'idle')) selId = -1;
     if (!over && !anyMoving && G.arrows.every(a => a.state === 'gone')) {
       over = true;
-      store.set(mode, level + 1);
-      showMsg('Level cleared!', 'Nice work.', 'Next level', () => start(mode, level + 1));
+      if (custom) showMsg('Board cleared!', 'Nice work.', 'New board', () => start(mode, level, newCustom(custom)));
+      else {
+        store.set(mode, level + 1);
+        showMsg('Level cleared!', 'Nice work.', 'Next level', () => start(mode, level + 1));
+      }
     }
   }
 
@@ -697,7 +723,7 @@ if (typeof document !== 'undefined') (function () {
       a.bump = 0;
       if (hard) {
         a.flash = 0.4; if (!settings.unlimited) lives--; updateHud();
-        if (lives <= 0) { over = true; showMsg('Out of lives', 'Give it another go.', 'Retry', () => start(mode, level)); }
+        if (lives <= 0) { over = true; showMsg('Out of lives', 'Give it another go.', 'Retry', () => start(mode, level, custom)); }
       }
       return;
     }
@@ -815,6 +841,26 @@ if (typeof document !== 'undefined') (function () {
     $('menu').classList.remove('hide'); $('overlay').classList.add('hide');
   }
   $('msgMenu').onclick = showMenu;
+  // ---- custom game: pick mode, size, density (and shape for Exterior) ----
+  const newCustom = c => ({ ...c, seed: (Math.random() * 1e9) | 0 });
+  let cust = { mode: '3dout', size: 1, dens: 1, shape: 0 };
+  try { Object.assign(cust, JSON.parse(localStorage.getItem('ae_custom'))); } catch (e) { }
+  for (const s of SHAPES) $('cShape').add(new Option(s.name, SHAPES.indexOf(s)));
+  $('cShape').add(new Option('Random', -1));
+  const cFields = { cMode: 'mode', cSize: 'size', cDens: 'dens', cShape: 'shape' };
+  const syncCustom = () => {
+    for (const id in cFields) $(id).value = cust[cFields[id]];
+    $('cShapeRow').classList.toggle('hide', cust.mode !== '3dout');
+  };
+  for (const id in cFields) $(id).onchange = e => {
+    const k = cFields[id], v = e.target.value;
+    cust[k] = k === 'mode' ? v : +v; syncCustom();
+    try { localStorage.setItem('ae_custom', JSON.stringify(cust)); } catch (err) { }
+  };
+  syncCustom();
+  $('customBtn').onclick = () => { syncCustom(); $('custom').classList.remove('hide'); };
+  $('cBack').onclick = () => $('custom').classList.add('hide');
+  $('cStart').onclick = () => { $('custom').classList.add('hide'); start(cust.mode, 1, newCustom(cust)); };
   $('resume').onclick = () => $('menu').classList.add('hide');
   $('howto').onclick = () => { $('help').scrollTop = 0; $('help').classList.remove('hide'); };
   $('helpClose').onclick = () => $('help').classList.add('hide');
@@ -822,7 +868,7 @@ if (typeof document !== 'undefined') (function () {
   $('play3d').onclick = () => start('3d', store.get()['3d']);
   $('play3dout').onclick = () => start('3dout', store.get()['3dout']);
   $('back').onclick = showMenu;
-  $('restart').onclick = () => start(mode, level);
+  $('restart').onclick = () => start(mode, level, custom);
   $('hint').onclick = hint;
   const saveSettings = () => {
     try { localStorage.setItem('ae_settings', JSON.stringify(settings)); } catch (err) { }
