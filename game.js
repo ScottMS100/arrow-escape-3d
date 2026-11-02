@@ -360,6 +360,25 @@ function generate(mode, level, c) {
       return { d, ray: rayOut(b, d, stepCode(sh, a, d), new Set(path.map(q => ck(...q)))) };
     };
 
+    const blockersOf = ray => {
+      const b = new Set();
+      for (const q of ray) { const o = own[idx(q)]; if (o >= 0) b.add(o); }
+      return b;
+    };
+    // does any arrow in `from` (through the arrows blocking it, and so on) depend on arrow `target`?
+    function reaches(from, target) {
+      const seen = new Set(), stack = [...from];
+      while (stack.length) {
+        const x = stack.pop();
+        if (x === target) return true;
+        if (seen.has(x)) continue;
+        seen.add(x);
+        for (const y of depsRef[x]) stack.push(y);
+      }
+      return false;
+    }
+    let depsRef = null;
+
     function fill() {
       const used = new Set(), order = surf.slice();
       for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
@@ -432,6 +451,26 @@ function generate(mode, level, c) {
       list.forEach((a, i) => claim(a.path, i));
       order = list.map((_, i) => i);
       if (pass < 4) fill();
+    }
+    // make it harder: turn arrows round to run into more others wherever that cannot make a loop
+    const deps = depsRef = list.map(a => blockersOf(a.ray));
+    for (let sweep = 0; sweep < 3; sweep++) {
+      const ids = list.map((_, i) => i);
+      for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; }
+      for (const i of ids) {
+        const a = list[i], rev = a.path.slice().reverse(), r = rayOf(rev);
+        if (!r.ray) continue;
+        const nd = blockersOf(r.ray);
+        if (nd.size <= deps[i].size || reaches(nd, i)) continue;
+        a.path = rev; a.ray = r.ray; deps[i] = nd;
+      }
+    }
+    // removal order: repeatedly take every arrow whose blockers are already gone
+    const left = new Set(list.map((_, i) => i));
+    order = [];
+    while (left.size) {
+      const now = [...left].filter(i => [...deps[i]].every(j => !left.has(j)));
+      now.forEach(i => { left.delete(i); order.push(i); });
     }
     if (P.dens < 1) order = order.filter(() => R() < P.dens);
     const res = order.map(i => {
