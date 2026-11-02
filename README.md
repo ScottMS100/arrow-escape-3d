@@ -5,8 +5,8 @@ Tap an arrow to slide it out the way it points. If another arrow is in its path
 it bumps and you lose a heart (3 per level). Clear the board to advance.
 
 - **2D Classic** – bendy arrows on a flat grid.
-- **3D Cube Inside** – a see-through n×n×n block of 3D arrows. Drag to rotate, tap to launch.
-- **3D Shapes Outside** – a solid shape (cube, L-block, steps, trough, T-block, cross, pyramid, castle; one per level) with flat arrows lying on its surface. Arrows slide along the faces, bend over edges, and drop off convex edges.
+- **3D Cube Interior** – a see-through n×n×n block of 3D arrows. Drag to rotate, tap to launch.
+- **3D Shapes Exterior** – a solid shape (cube, L-block, steps, trough, T-block, cross, pyramid, castle; one per level) with flat arrows lying on its surface. Arrows slide along the faces, bend over edges, and drop off convex edges.
 - Scroll wheel or pinch to zoom.
 - 💡 highlights an arrow that can leave right now; ↻ restarts the level.
 - Levels are generated from a seed and are always solvable. Progress is saved in the browser.

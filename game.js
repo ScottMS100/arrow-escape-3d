@@ -40,7 +40,7 @@ function params(mode, level) {
   return { W: n, H: n, D: n, dens: Math.min(0.6 + level * 0.005, 0.8), maxLen: Math.min(6 + Math.floor(level / 3), 16) };
 }
 
-// Outside-mode solids are unions of axis-aligned blocks ([x0,y0,z0,x1,y1,z1] in
+// Exterior-mode solids are unions of axis-aligned blocks ([x0,y0,z0,x1,y1,z1] in
 // block units); each block is T x T x T unit cubes on the arrow lattice.
 const SHAPES = [
   { name: 'Cube', boxes: [[0, 0, 0, 3, 3, 3]] },
@@ -384,11 +384,11 @@ if (typeof document !== 'undefined') (function () {
     lives = 3; over = false; hintId = -1; selId = -1; zoom = 1; panX = panY = 0;
     if (m === '2d') { yaw = 0; pitch = 0; } else { yaw = -0.7; pitch = 0.5; }
     $('menu').classList.add('hide'); $('overlay').classList.add('hide');
-    $('title').textContent = { '2d': '2D', '3d': '3D Inside', '3dout': '3D Outside' }[m] + ' · Level ' + l + (m === '3dout' ? ' · ' + G.P.shape.name : '');
+    $('title').textContent = { '2d': '2D', '3d': '3D Interior', '3dout': '3D Exterior' }[m] + ' · Level ' + l + (m === '3dout' ? ' · ' + G.P.shape.name : '');
     updateHud(); resize();
   }
 
-  // exposed block faces of an Outside-mode solid, with the dots drawn on them
+  // exposed block faces of an Exterior-mode solid, with the dots drawn on them
   function buildBlocks(sh) {
     const T = sh.T, blocks = [], bmap = new Array(sh.bw * sh.bh * sh.bd).fill(null);
     for (let x = 0; x < sh.bw; x++) for (let y = 0; y < sh.bh; y++) for (let z = 0; z < sh.bd; z++) {
@@ -476,7 +476,7 @@ if (typeof document !== 'undefined') (function () {
     return u[1] * sP + (-u[0] * sY + u[2] * cY) * cP;
   }
 
-  // Outside mode: arrows are flat ribbons lying on the solid's surface.
+  // Exterior mode: arrows are flat ribbons lying on the solid's surface.
   // Each piece is drawn right after the block faces it lies on (see render).
   function drawFlat(a, clean, head, hue, sat, light) {
     const sh = G.P.shape, T = sh.T, w = 0.035 / PITCH, lift = 0.012, th = 0.006;

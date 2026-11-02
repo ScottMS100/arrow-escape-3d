@@ -61,12 +61,12 @@
   <button id="resume" class="primary hide" style="padding:16px;font-size:1.1rem;width:min(320px,100%)">▶ Resume game</button>
   <div class="modes">
     <button id="play2d" class="primary"><span>2D Classic</span><small id="lv2d"></small></button>
-    <button id="play3d" class="primary"><span>3D Cube Inside</span><small id="lv3d"></small></button>
-    <button id="play3dout" class="primary"><span>3D Shapes Outside</span><small id="lv3dout"></small></button>
+    <button id="play3d" class="primary"><span>3D Cube Interior</span><small id="lv3d"></small></button>
+    <button id="play3dout" class="primary"><span>3D Shapes Exterior</span><small id="lv3dout"></small></button>
   </div>
   <button id="howto" style="width:min(320px,100%)">How to play</button>
   <label class="opt"><input type="checkbox" id="optDouble"> Double-tap to launch<small>Tap an arrow to highlight it, tap it again within 4 seconds to send it. Handy on a phone.</small></label>
-  <p><b>Inside</b>: a see-through cube of 3D arrows. <b>Outside</b>: a solid shape (cube, steps, castle and more, a new one each level) with flat arrows on its surface. Drag to rotate, scroll or pinch to zoom, tap an arrow to launch it.</p>
+  <p><b>Interior</b>: a see-through cube of 3D arrows. <b>Exterior</b>: a solid shape (cube, steps, castle and more, a new one each level) with flat arrows on its surface. Drag to rotate, scroll or pinch to zoom, tap an arrow to launch it.</p>
 </div>
 
 <div id="help" class="screen hide">
@@ -89,8 +89,8 @@
     <h2>The three modes</h2>
     <ul>
       <li><b>2D Classic</b>: a flat board packed with winding arrows. Zoom in to tap small arrows.</li>
-      <li><b>3D Cube Inside</b>: a see-through block of 3D arrows. Rotate it to see arrows hiding behind others.</li>
-      <li><b>3D Shapes Outside</b>: a solid shape (a new one each level) with flat arrows on its surface. Arrows can bend over edges and slide off the edge they point at.</li>
+      <li><b>3D Cube Interior</b>: a see-through block of 3D arrows. Rotate it to see arrows hiding behind others.</li>
+      <li><b>3D Shapes Exterior</b>: a solid shape (a new one each level) with flat arrows on its surface. Arrows can bend over edges and slide off the edge they point at.</li>
     </ul>
     <h2>Moving around</h2>
     <ul>
@@ -108,7 +108,7 @@
   <button id="msgBtn" class="primary"></button>
 </div>
 
-<script src="game.js?v=27"></script>
+<script src="game.js?v=28"></script>
 <script>
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
