@@ -814,6 +814,7 @@ if (typeof document !== 'undefined') (function () {
     $('resume').textContent = G ? '▶ Resume ' + $('title').textContent : '';
     $('menu').classList.remove('hide'); $('overlay').classList.add('hide');
   }
+  $('msgMenu').onclick = showMenu;
   $('resume').onclick = () => $('menu').classList.add('hide');
   $('howto').onclick = () => { $('help').scrollTop = 0; $('help').classList.remove('hide'); };
   $('helpClose').onclick = () => $('help').classList.add('hide');
