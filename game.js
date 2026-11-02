@@ -19,7 +19,7 @@ const ck = (x, y, z) => x + ',' + y + ',' + z;
 const CUSTOM = {
   '2d': { W: [12, 18, 26], H: [14, 22, 32], maxLen: [10, 16, 24], dens: [0.5, 0.75, 1] },
   '3d': { n: [5, 8, 12], maxLen: [6, 10, 16], dens: [0.4, 0.6, 0.8] },
-  '3dout': { base: [6, 9, 13], maxLen: [6, 10, 14], dens: [0.4, 0.6, 0.8] },
+  '3dout': { base: [7, 11, 18], len: [24, 14, 9], dens: [0.5, 0.75, 0.95] }, // len: longest arrow in cells, by density
 };
 
 function params(mode, level, c) {
@@ -33,7 +33,7 @@ function params(mode, level, c) {
     const shape = makeShape(def, T);
     return {
       W: shape.E[0] + 1, H: shape.E[1] + 1, D: shape.E[2] + 1, shape,
-      dens: t.dens[c.dens], maxLen: Math.round(t.maxLen[c.size] / PITCH),
+      dens: t.dens[c.dens], maxLen: t.len[c.dens],
     };
   }
   if (mode === '2d') {
@@ -277,15 +277,15 @@ function generate(mode, level, c) {
   const target = Math.floor((out ? surf.length : W * H * D) * P.dens);
   // Harder levels compare more candidates per arrow and keep the one that
   // blocks the most earlier arrows' exits, which builds deeper dependency chains.
-  const pickN = mode === '2d' ? Math.min(40 + level * 2, 120) : Math.min(8 + Math.floor(level * 0.75), 40);
+  const pickN = c ? [10, 25, 40][c.dens] : mode === '2d' ? Math.min(40 + level * 2, 120) : Math.min(8 + Math.floor(level * 0.75), 40);
   const blockedBy = new Map(); // cell -> number of earlier arrows whose exit ray crosses it
   const arrows = [];
   let cells = 0, budget = Math.max(5000, W * H * D * (mode === '2d' ? 60 : 12));
 
   // random arrow whose exit ray crosses no existing arrow, or null
-  function build() {
+  function build(start) {
     const len = 2 + Math.floor(R() * (P.maxLen - 1));
-    let p = out ? surf[Math.floor(R() * surf.length)].slice() : [Math.floor(R() * W), Math.floor(R() * H), Math.floor(R() * D)];
+    let p = start ? start.slice() : out ? surf[Math.floor(R() * surf.length)].slice() : [Math.floor(R() * W), Math.floor(R() * H), Math.floor(R() * D)];
     if (occ.has(ck(...p))) return null;
     const path = [p];
     const mine = new Set([ck(...p)]);
@@ -337,7 +337,12 @@ function generate(mode, level, c) {
       if (sc > bs) { bs = sc; best = c; }
     }
     if (!best) break;
-    const { cand, ray, d } = best, L = cand.length, b = cand[L - 1];
+    place(best);
+  }
+  return { P, arrows };
+
+  function place({ cand, ray, d }) {
+    const L = cand.length, b = cand[L - 1];
     const ext = cand.concat(ray);
     let e = ray.length ? ray[ray.length - 1] : b;
     for (let i = 0; i < L + 2; i++) { e = [e[0] + d[0], e[1] + d[1], e[2] + d[2]]; ext.push(e); }
@@ -351,7 +356,6 @@ function generate(mode, level, c) {
     for (const c of ray) blockedBy.set(ck(...c), (blockedBy.get(ck(...c)) || 0) + 1);
     cells += L;
   }
-  return { P, arrows };
 }
 
 if (typeof module !== 'undefined') module.exports = { generate, params, ck, PITCH };
