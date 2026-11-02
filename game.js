@@ -345,6 +345,7 @@ function generate(mode, level, c) {
   // Custom Exterior boards: cover the whole surface with winding paths, then peel off the
   // arrows that can leave and fix any loops left (flip a head, else drop an arrow), as in gen2d.
   function genOutPacked() {
+    const EDGE_BIAS = 0.8, EDGE_SEED = 0.9, PROT = 1, PASSES = 40;
     const idx = q => (q[0] * H + q[1]) * D + q[2];
     const own = new Int32Array(W * H * D).fill(-1);
     let list = [];
@@ -360,6 +361,16 @@ function generate(mode, level, c) {
       return { d, ray: rayOut(b, d, stepCode(sh, a, d), new Set(path.map(q => ck(...q)))) };
     };
 
+    // how many times the arrow passes from one face onto another
+    const turns = path => {
+      let n = 0, c = null;
+      for (let k = 0; k + 1 < path.length; k++) {
+        const p = path[k], q = path[k + 1], t = stepCode(sh, p, [q[0] - p[0], q[1] - p[1], q[2] - p[2]]);
+        if (c !== null && t !== c) n++;
+        c = t;
+      }
+      return n;
+    };
     const blockersOf = (ray, self) => {
       const b = new Set();
       for (const q of ray) { const o = own[idx(q)]; if (o >= 0 && o !== self) b.add(o); }
@@ -382,75 +393,103 @@ function generate(mode, level, c) {
     function fill() {
       const used = new Set(), order = surf.slice();
       for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
-      for (let thr = 1; thr <= 6; thr++) for (const q of order) {
+      function grow(q) {
         const i = idx(q);
-        if (own[i] !== -1 || used.has(i) || nbrs(q).length > thr) continue;
         const path = [q], id = list.length, len = 3 + Math.floor(R() * (P.maxLen - 2));
         own[i] = id;
-        for (let end = 0; end < 2; end++) {
-          while (path.length < len) {
-            const h = end ? path[0] : path[path.length - 1], opts = nbrs(h);
-            if (!opts.length) break;
-            let nx;
-            if (R() < 0.3) nx = opts[Math.floor(R() * opts.length)];
-            else {
-              let m = 9, cs = [];
-              for (const o of opts) { const k = nbrs(o).length; if (k < m) { m = k; cs = [o]; } else if (k === m) cs.push(o); }
-              nx = cs[Math.floor(R() * cs.length)];
-            }
-            own[idx(nx)] = id;
-            if (end) path.unshift(nx); else path.push(nx);
+        // grow both ends in turn, so an arrow started on an edge reaches both faces
+        const stuck = [false, false];
+        for (let k = 0; path.length < len && !(stuck[0] && stuck[1]); k++) {
+          const end = k & 1;
+          if (stuck[end]) continue;
+          const h = end ? path[0] : path[path.length - 1], opts = nbrs(h);
+          if (!opts.length) { stuck[end] = true; continue; }
+          let nx;
+          const eo = opts.filter(o => ptKind(sh, o) === 2);
+          if (eo.length && R() < EDGE_BIAS) nx = eo[Math.floor(R() * eo.length)]; // carry on over an edge
+          else if (R() < 0.3) nx = opts[Math.floor(R() * opts.length)];
+          else {
+            let m = 9, cs = [];
+            for (const o of opts) { const kk = nbrs(o).length; if (kk < m) { m = kk; cs = [o]; } else if (kk === m) cs.push(o); }
+            nx = cs[Math.floor(R() * cs.length)];
           }
+          own[idx(nx)] = id;
+          if (end) path.unshift(nx); else path.push(nx);
         }
         // an arrow never starts or ends on an edge
         while (path.length && ptKind(sh, path[0]) === 2) own[idx(path.shift())] = -1;
         while (path.length && ptKind(sh, path[path.length - 1]) === 2) own[idx(path.pop())] = -1;
-        if (path.length < 2) { claim(path, -1); used.add(i); continue; }
+        if (path.length < 2) { claim(path, -1); used.add(i); return; }
         if (R() < 0.5) path.reverse();
         list.push({ path });
+      }
+      // start many arrows on edge points, so they bend over onto the next face
+      for (const q of order) if (ptKind(sh, q) === 2 && own[idx(q)] === -1 && R() < EDGE_SEED) grow(q);
+      for (const q of order) if (own[idx(q)] === -1 && R() < EDGE_SEED && nbrs(q).some(o => ptKind(sh, o) === 2)) grow(q);
+      for (let thr = 1; thr <= 6; thr++) for (const q of order) {
+        const i = idx(q);
+        if (own[i] !== -1 || used.has(i) || nbrs(q).length > thr) continue;
+        grow(q);
       }
     }
 
     function resolve() {
-      const alive = new Set();
+      const alive = new Set(), dep = [], rev = [];
       list.forEach((a, i) => {
         let r = rayOf(a.path);
         if (!r.ray) { a.path.reverse(); r = rayOf(a.path); }
         if (!r.ray) { claim(a.path, -1); return; }
         a.ray = r.ray; alive.add(i);
       });
-      const blockers = ray => {
+      const owners = ray => {
         const b = new Set();
         for (const q of ray) { const o = own[idx(q)]; if (o >= 0 && alive.has(o)) b.add(o); }
         return b;
       };
-      const order = [];
+      const setDeps = (i, ds) => {
+        dep[i] = ds;
+        for (const j of ds) (rev[j] || (rev[j] = new Set())).add(i);
+      };
+      for (const i of alive) setDeps(i, owners(list[i].ray));
+      const queue = [...alive].filter(i => !dep[i].size), order = [];
+      // arrow i is gone (taken off the board or dropped): whatever it blocked loses a blocker
+      const release = i => {
+        alive.delete(i);
+        for (const j of rev[i] || []) if (alive.has(j) && dep[j].delete(i) && !dep[j].size) queue.push(j);
+      };
       while (alive.size) {
-        let moved = true;
-        while (moved) {
-          moved = false;
-          for (const i of [...alive]) if (!blockers(list[i].ray).size) { alive.delete(i); order.push(i); moved = true; }
+        while (queue.length) {
+          const i = queue.pop();
+          if (!alive.has(i)) continue;
+          order.push(i); release(i);
         }
         if (!alive.size) break;
+        // only loops are left: turn an arrow round if that helps, else drop it
         let cur = [...alive][Math.floor(R() * alive.size)];
         const seen = [];
-        while (!seen.includes(cur)) { seen.push(cur); cur = [...blockers(list[cur].ray)][0]; }
-        const cyc = seen.slice(seen.indexOf(cur)), v = cyc[Math.floor(R() * cyc.length)], a = list[v];
-        const rev = a.path.slice().reverse(), r = rayOf(rev);
-        if (r.ray && blockers(r.ray).size < blockers(a.ray).size) { a.path = rev; a.ray = r.ray; }
-        else { alive.delete(v); claim(a.path, -1); }
+        while (!seen.includes(cur)) { seen.push(cur); cur = [...dep[cur]][0]; }
+        const cyc = seen.slice(seen.indexOf(cur)), plain = cyc.filter(k => !turns(list[k].path));
+        // fix a loop at an arrow that stays on one face if there is one, so more arrows keep bending over edges
+        const pool = plain.length && R() < PROT ? plain : cyc, v = pool[Math.floor(R() * pool.length)], a = list[v];
+        const rev2 = a.path.slice().reverse(), r = rayOf(rev2);
+        const nd = r.ray && owners(r.ray);
+        if (nd && nd.size < dep[v].size) {
+          for (const j of dep[v]) rev[j].delete(v);
+          a.path = rev2; a.ray = r.ray; setDeps(v, nd);
+          if (!nd.size) queue.push(v);
+        } else { claim(a.path, -1); release(v); }
       }
       return order;
     }
 
     let order;
     fill();
-    for (let pass = 0; pass < 5; pass++) {
+    for (let pass = 0; pass < PASSES; pass++) {
       order = resolve();
       list = order.map(i => list[i]);
       list.forEach((a, i) => claim(a.path, i));
       order = list.map((_, i) => i);
-      if (pass < 4) fill();
+      if (pass < PASSES - 1) fill();
     }
     // make it harder: turn arrows round to run into more others wherever that cannot make a loop
     const deps = depsRef = list.map((a, i) => blockersOf(a.ray, i));
@@ -473,7 +512,7 @@ function generate(mode, level, c) {
         for (let lo = 0; lo <= 2; lo++) for (let hi = 0; hi <= 2; hi++) {
           if (!lo && !hi) continue;
           const p = a.path.slice(lo, a.path.length - hi);
-          if (p.length < 2 || ptKind(sh, p[0]) === 2 || ptKind(sh, p[p.length - 1]) === 2) continue;
+          if (p.length < 2 || ptKind(sh, p[0]) === 2 || ptKind(sh, p[p.length - 1]) === 2 || turns(p) < turns(a.path)) continue;
           for (const q of [p, p.slice().reverse()]) {
             const r = rayOf(q);
             if (!r.ray) continue;
@@ -525,7 +564,7 @@ function generate(mode, level, c) {
   }
 }
 
-if (typeof module !== 'undefined') module.exports = { generate, params, ck, PITCH };
+if (typeof module !== 'undefined') module.exports = { generate, params, ck, PITCH, stepCode };
 
 if (typeof document !== 'undefined') (function () {
   const $ = id => document.getElementById(id);
